@@ -53,6 +53,11 @@ settings on npmjs.com. Package settings must also be set to "Require
 two-factor authentication and disallow tokens" so the OIDC flow is the only
 publish path. The release owner is the sole package maintainer.
 
+The GitHub-side pieces (approval-gated `npm-release` environment, tag
+deployment policy, admin-only tag ruleset) are provisioned by
+[`scripts/release/setup-github-oidc-release.sh`](scripts/release/setup-github-oidc-release.sh),
+which is idempotent and reusable for other repositories.
+
 One-time bootstrap: trusted publishing requires the package to already exist
 on npm, so the first release is published manually by the release owner
 (`npm publish --access public` on the tagged SHA), after which the trusted
