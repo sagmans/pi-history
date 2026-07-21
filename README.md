@@ -35,12 +35,23 @@ absolute project path to avoid collisions and filesystem filename limits.
 pi install https://github.com/sagmans/pi-history
 ```
 
-Pin a release tag to stay on a fixed version (recommended; unpinned installs
-track the default branch):
+Pin a release tag to stay on a fixed version (recommended once releases are
+tagged; unpinned installs track the default branch):
 
 ```bash
 pi install git:github.com/sagmans/pi-history@v0.1.0
 ```
+
+## Supported environments
+
+| Component | Supported | Notes |
+| --- | --- | --- |
+| OS | macOS (primary), Linux | Windows unsupported (POSIX file permissions, symlink handling) |
+| Node.js | `>=22.19.0` | CI tests exact minimum `22.19.0` and current `24` |
+| pi | `>=0.80.x`, tested at `0.81.1` | Peer range is `*` per pi packaging rules; that is a loading requirement, not a support promise |
+| Terminal | tested under [herdr](https://github.com/fitchmultz/herdr) and standard macOS terminals | Ghost completion is best effort and degrades gracefully (see Features) |
+
+CI runs the full verify suite on Ubuntu and macOS across both Node versions.
 
 ## Configuration
 
