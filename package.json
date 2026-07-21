@@ -1,0 +1,39 @@
+{
+  "name": "pi-history",
+  "version": "0.1.0",
+  "description": "Ghost completion for prompt history across pi sessions",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sagmans/pi-history.git"
+  },
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "history",
+    "ghost-completion"
+  ],
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "node --experimental-transform-types --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.3",
+    "@earendil-works/pi-tui": "0.80.3"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.80.3",
+    "@earendil-works/pi-tui": "0.80.3",
+    "@types/node": "24.13.2",
+    "typescript": "7.0.2"
+  }
+}
