@@ -39,6 +39,7 @@ jobs:
     # Approval gate: the npm-release environment requires the release owner's
     # review, so every publish is an explicit human decision.
     environment: npm-release
+    timeout-minutes: 10
     permissions:
       contents: read
       # Mints the OIDC token npm exchanges for a short-lived publish credential.
