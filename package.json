@@ -7,7 +7,10 @@
     "type": "git",
     "url": "git+https://github.com/sagmans/pi-history.git"
   },
+  "homepage": "https://github.com/sagmans/pi-history#readme",
+  "bugs": "https://github.com/sagmans/pi-history/issues",
   "keywords": [
+    "pi-package",
     "pi",
     "pi-extension",
     "history",
@@ -27,8 +30,8 @@
     "node": ">=22.19.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "0.80.3",
-    "@earendil-works/pi-tui": "0.80.3"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.80.3",
