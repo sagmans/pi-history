@@ -11,47 +11,55 @@ import {
 	getExtensionRoot,
 	loadPiHistoryConfig,
 	normalizeConfig,
+	type ConfigLayer,
 } from "../src/config.ts";
 
 const SHIPPED_MAX_ENTRIES = 2_000;
 
-test("loads shipped config with managed history cap and global isolation", () => {
-	const result = loadPiHistoryConfig(getExtensionRoot());
+function layer(value: unknown, origin = "config.json"): ConfigLayer {
+	return { origin, value };
+}
 
-	assert.equal(result.config.maxEntries, SHIPPED_MAX_ENTRIES);
-	// Shipped config opts into global isolation so prompt history is shared
-	// across repos on a host.
-	assert.equal(result.config.isolationLevel, IsolationLevel.Global);
-	assert.deepEqual(result.warnings, []);
+test("loads shipped config with managed history cap and global isolation", () => {
+	// Empty user dir keeps the test hermetic; real user config must not leak in.
+	withConfigFixture((_repoDir, userDir) => {
+		const result = loadPiHistoryConfig(getExtensionRoot(), userDir);
+
+		assert.equal(result.config.maxEntries, SHIPPED_MAX_ENTRIES);
+		// Shipped config opts into global isolation so prompt history is shared
+		// across repos on a host.
+		assert.equal(result.config.isolationLevel, IsolationLevel.Global);
+		assert.deepEqual(result.warnings, []);
+	});
 });
 
 test("missing isolationLevel falls back to default", () => {
-	const result = normalizeConfig({ maxEntries: 100 });
+	const result = normalizeConfig([layer({ maxEntries: 100 })]);
 
 	assert.equal(result.config.isolationLevel, DEFAULT_ISOLATION_LEVEL);
 	assert.deepEqual(result.warnings, []);
 });
 
 test("tracked isolationLevel project is honored", () => {
-	const result = normalizeConfig({ isolationLevel: "project" });
+	const result = normalizeConfig([layer({ isolationLevel: "project" })]);
 
 	assert.equal(result.config.isolationLevel, IsolationLevel.Project);
 	assert.deepEqual(result.warnings, []);
 });
 
-test("local isolationLevel overrides tracked value", () => {
-	const result = normalizeConfig(
-		{ isolationLevel: "project" },
-		{ isolationLevel: "global" },
-	);
+test("higher layer isolationLevel overrides lower value", () => {
+	const result = normalizeConfig([
+		layer({ isolationLevel: "project" }),
+		layer({ isolationLevel: "global" }, "config.local.json"),
+	]);
 
 	assert.equal(result.config.isolationLevel, IsolationLevel.Global);
 	assert.deepEqual(result.warnings, []);
 });
 
 test("invalid isolationLevel warns and falls back to default", () => {
-	const invalidValue = normalizeConfig({ isolationLevel: "host" });
-	const invalidType = normalizeConfig({ isolationLevel: 5 });
+	const invalidValue = normalizeConfig([layer({ isolationLevel: "host" })]);
+	const invalidType = normalizeConfig([layer({ isolationLevel: 5 })]);
 
 	assert.equal(invalidValue.config.isolationLevel, DEFAULT_ISOLATION_LEVEL);
 	assert.match(invalidValue.warnings.join("\n"), /isolationLevel/);
@@ -59,31 +67,44 @@ test("invalid isolationLevel warns and falls back to default", () => {
 	assert.match(invalidType.warnings.join("\n"), /project\|global/);
 });
 
-test("invalid local isolationLevel falls back to default instead of tracked config", () => {
-	const result = normalizeConfig(
-		{ isolationLevel: "project" },
-		{ isolationLevel: "bogus" },
-	);
+test("invalid higher-layer isolationLevel falls back to default instead of lower layer", () => {
+	const result = normalizeConfig([
+		layer({ isolationLevel: "project" }),
+		layer({ isolationLevel: "bogus" }, "config.local.json"),
+	]);
 
 	assert.equal(result.config.isolationLevel, DEFAULT_ISOLATION_LEVEL);
 	assert.match(result.warnings.join("\n"), /config\.local\.json/);
 });
 
-test("local config overrides tracked maxEntries", () => {
-	withConfigFixture((fixturePath) => {
-		writeFileSync(path.join(fixturePath, "config.json"), '{"maxEntries": 500}');
-		writeFileSync(path.join(fixturePath, "config.local.json"), '{"maxEntries": 25}');
+test("user local config overrides user config and shipped config", () => {
+	withConfigFixture((repoDir, userDir) => {
+		writeFileSync(path.join(repoDir, "config.json"), '{"maxEntries": 500}');
+		writeFileSync(path.join(userDir, "config.json"), '{"maxEntries": 100}');
+		writeFileSync(path.join(userDir, "config.local.json"), '{"maxEntries": 25}');
 
-		const result = loadPiHistoryConfig(fixturePath);
+		const result = loadPiHistoryConfig(repoDir, userDir);
 
 		assert.equal(result.config.maxEntries, 25);
 		assert.deepEqual(result.warnings, []);
 	});
 });
 
+test("user config overrides shipped config without a local layer", () => {
+	withConfigFixture((repoDir, userDir) => {
+		writeFileSync(path.join(repoDir, "config.json"), '{"maxEntries": 500}');
+		writeFileSync(path.join(userDir, "config.json"), '{"maxEntries": 100}');
+
+		const result = loadPiHistoryConfig(repoDir, userDir);
+
+		assert.equal(result.config.maxEntries, 100);
+		assert.deepEqual(result.warnings, []);
+	});
+});
+
 test("invalid and non-positive caps fall back to default with warnings", () => {
-	const invalidNumber = normalizeConfig({ maxEntries: 0 });
-	const invalidType = normalizeConfig({ maxEntries: "500" });
+	const invalidNumber = normalizeConfig([layer({ maxEntries: 0 })]);
+	const invalidType = normalizeConfig([layer({ maxEntries: "500" })]);
 
 	assert.equal(invalidNumber.config.maxEntries, DEFAULT_MAX_ENTRIES);
 	assert.match(invalidNumber.warnings.join("\n"), /maxEntries/i);
@@ -91,16 +112,19 @@ test("invalid and non-positive caps fall back to default with warnings", () => {
 	assert.match(invalidType.warnings.join("\n"), /positive integer/i);
 });
 
-test("invalid local override falls back to default instead of tracked config", () => {
-	const result = normalizeConfig({ maxEntries: 250 }, { maxEntries: -1 });
+test("invalid higher-layer override falls back to default instead of lower layer", () => {
+	const result = normalizeConfig([
+		layer({ maxEntries: 250 }),
+		layer({ maxEntries: -1 }, "config.local.json"),
+	]);
 
 	assert.equal(result.config.maxEntries, DEFAULT_MAX_ENTRIES);
 	assert.match(result.warnings.join("\n"), /config\.local\.json/);
 });
 
 test("missing config files do not throw", () => {
-	withConfigFixture((fixturePath) => {
-		const result = loadPiHistoryConfig(fixturePath);
+	withConfigFixture((repoDir, userDir) => {
+		const result = loadPiHistoryConfig(repoDir, userDir);
 
 		assert.equal(result.config.maxEntries, DEFAULT_MAX_ENTRIES);
 		assert.deepEqual(result.warnings, []);
@@ -108,21 +132,35 @@ test("missing config files do not throw", () => {
 });
 
 test("invalid JSON produces a runtime warning and defaults", () => {
-	withConfigFixture((fixturePath) => {
-		writeFileSync(path.join(fixturePath, "config.json"), "{");
+	withConfigFixture((repoDir, userDir) => {
+		writeFileSync(path.join(repoDir, "config.json"), "{");
 
-		const result = loadPiHistoryConfig(fixturePath);
+		const result = loadPiHistoryConfig(repoDir, userDir);
 
 		assert.equal(result.config.maxEntries, DEFAULT_MAX_ENTRIES);
 		assert.match(result.warnings.join("\n"), /config\.json invalid/);
 	});
 });
 
-function withConfigFixture(testBody: (fixturePath: string) => void): void {
-	const fixturePath = mkdtempSync(path.join(tmpdir(), "pi-history-config-"));
+test("invalid user JSON warns and keeps lower layers effective", () => {
+	withConfigFixture((repoDir, userDir) => {
+		writeFileSync(path.join(repoDir, "config.json"), '{"maxEntries": 300}');
+		writeFileSync(path.join(userDir, "config.local.json"), "{");
+
+		const result = loadPiHistoryConfig(repoDir, userDir);
+
+		assert.equal(result.config.maxEntries, 300);
+		assert.match(result.warnings.join("\n"), /config\.local\.json invalid/);
+	});
+});
+
+function withConfigFixture(testBody: (repoDir: string, userDir: string) => void): void {
+	const repoDir = mkdtempSync(path.join(tmpdir(), "pi-history-repo-"));
+	const userDir = mkdtempSync(path.join(tmpdir(), "pi-history-user-"));
 	try {
-		testBody(fixturePath);
+		testBody(repoDir, userDir);
 	} finally {
-		rmSync(fixturePath, { force: true, recursive: true });
+		rmSync(repoDir, { force: true, recursive: true });
+		rmSync(userDir, { force: true, recursive: true });
 	}
 }

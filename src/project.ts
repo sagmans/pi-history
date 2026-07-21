@@ -1,11 +1,10 @@
 import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
 
 import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
 
-import { IsolationLevel } from "./config.ts";
+import { IsolationLevel, PI_HISTORY_DIR } from "./config.ts";
 
 export const PRIVATE_DIR_MODE = 0o700;
 export const PRIVATE_FILE_MODE = 0o600;
@@ -101,7 +100,7 @@ export function createProjectIdentity(input: {
 }
 
 export function defaultHistoryBaseDir(): string {
-	return path.join(homedir(), ".pi", "agent", "pi-history");
+	return PI_HISTORY_DIR;
 }
 
 export function sanitizeProjectPath(projectRoot: string): string {

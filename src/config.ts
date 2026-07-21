@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,9 +14,18 @@ export enum IsolationLevel {
 
 const ISOLATION_LEVELS = [IsolationLevel.Project, IsolationLevel.Global] as const;
 
-// Project isolation is the safe default: prompt history must not leak across
-// unrelated repos on a host unless the user explicitly opts into global scope.
+// Built-in fallback when no config layer supplies a value. The shipped tracked
+// config.json deliberately opts users into global isolation because cross-project
+// recall is the extension's headline feature; this fallback only guards against
+// missing or broken config and therefore stays at the safer project scope.
 export const DEFAULT_ISOLATION_LEVEL: IsolationLevel = IsolationLevel.Project;
+
+// Data directory shared with the history store. User config lives here (not
+// inside the pi package clone) because `pi update` resets and cleans clones,
+// which would silently delete untracked config files on every update.
+export const PI_HISTORY_DIR = path.join(homedir(), ".pi", "agent", "pi-history");
+export const USER_CONFIG_FILE_NAME = "config.json";
+export const USER_LOCAL_CONFIG_FILE_NAME = "config.local.json";
 
 export type PiHistoryConfig = {
 	maxEntries: number;
@@ -27,26 +37,27 @@ export type ConfigLoadResult = {
 	warnings: string[];
 };
 
-type ConfigFileName = "config.json" | "config.local.json";
+// One layer of configuration, lowest precedence first. The shipped repo
+// config.json is the bottom layer; user config.json and user config.local.json
+// from PI_HISTORY_DIR stack on top; runtime overrides (tests) sit highest.
+export type ConfigLayer = {
+	origin: string;
+	value: unknown;
+};
 
 type OptionCandidate<Value> =
 	| { kind: "absent" }
 	| { kind: "valid"; value: Value }
 	| { kind: "invalid"; warning: string };
 
-export function normalizeConfig(
-	tracked?: unknown,
-	local?: unknown,
-): ConfigLoadResult {
+export function normalizeConfig(layers: readonly ConfigLayer[]): ConfigLoadResult {
 	const maxEntries = resolveOption({
-		tracked,
-		local,
+		layers,
 		read: readMaxEntries,
 		fallback: DEFAULT_MAX_ENTRIES,
 	});
 	const isolationLevel = resolveOption({
-		tracked,
-		local,
+		layers,
 		read: readIsolationLevel,
 		fallback: DEFAULT_ISOLATION_LEVEL,
 	});
@@ -61,35 +72,33 @@ export function normalizeConfig(
 }
 
 function resolveOption<Value>(input: {
-	tracked: unknown;
-	local: unknown;
-	read: (source: unknown, origin: ConfigFileName) => OptionCandidate<Value>;
+	layers: readonly ConfigLayer[];
+	read: (source: unknown, origin: string) => OptionCandidate<Value>;
 	fallback: Value;
 }): { value: Value; warnings: string[] } {
-	const trackedCandidate = input.read(input.tracked, "config.json");
-	const localCandidate = input.read(input.local, "config.local.json");
-	const warnings = [trackedCandidate, localCandidate].flatMap((candidate) =>
-		candidate.kind === "invalid" ? [candidate.warning] : [],
-	);
+	const candidates = input.layers.map((layer) => input.read(layer.value, layer.origin));
 	return {
-		value: chooseValue({ trackedCandidate, localCandidate, fallback: input.fallback }),
-		warnings,
+		value: chooseValue(candidates, input.fallback),
+		warnings: candidates.flatMap((candidate) =>
+			candidate.kind === "invalid" ? [candidate.warning] : [],
+		),
 	};
 }
 
-function chooseValue<Value>(input: {
-	trackedCandidate: OptionCandidate<Value>;
-	localCandidate: OptionCandidate<Value>;
-	fallback: Value;
-}): Value {
-	if (input.localCandidate.kind === "valid") return input.localCandidate.value;
-	// A broken local override should be obvious and safe, not silently masked by tracked config.
-	if (input.localCandidate.kind === "invalid") return input.fallback;
-	if (input.trackedCandidate.kind === "valid") return input.trackedCandidate.value;
-	return input.fallback;
+// The highest layer that mentions the option decides. If that layer is broken,
+// fall back to the built-in default rather than a lower layer: a broken explicit
+// override must be loud and safe, not silently masked by config the user may
+// have forgotten about.
+function chooseValue<Value>(candidates: readonly OptionCandidate<Value>[], fallback: Value): Value {
+	for (let index = candidates.length - 1; index >= 0; index -= 1) {
+		const candidate = candidates[index];
+		if (candidate.kind === "valid") return candidate.value;
+		if (candidate.kind === "invalid") return fallback;
+	}
+	return fallback;
 }
 
-function readMaxEntries(source: unknown, origin: ConfigFileName): OptionCandidate<number> {
+function readMaxEntries(source: unknown, origin: string): OptionCandidate<number> {
 	if (!isRecord(source) || !("maxEntries" in source)) return { kind: "absent" };
 	if (isPositiveInteger(source.maxEntries)) {
 		return { kind: "valid", value: source.maxEntries };
@@ -102,7 +111,7 @@ function readMaxEntries(source: unknown, origin: ConfigFileName): OptionCandidat
 
 function readIsolationLevel(
 	source: unknown,
-	origin: ConfigFileName,
+	origin: string,
 ): OptionCandidate<IsolationLevel> {
 	if (!isRecord(source) || !("isolationLevel" in source)) return { kind: "absent" };
 	if (isIsolationLevel(source.isolationLevel)) {
@@ -119,8 +128,8 @@ function isIsolationLevel(value: unknown): value is IsolationLevel {
 }
 
 function readJsonIfExists(filePath: string): unknown {
-	// One try/catch avoids a TOCTOU race; loadConfigFromDisk only cares whether a file
-	// is absent (undefined) or unreadable/invalid (warning), so both collapse here.
+	// One try/catch avoids a TOCTOU race; callers only care whether a file is
+	// absent (undefined) or unreadable/invalid (warning), so both collapse here.
 	try {
 		return JSON.parse(readFileSync(filePath, "utf8"));
 	} catch (error) {
@@ -133,30 +142,55 @@ export function getExtensionRoot(): string {
 	return path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 }
 
-export function loadConfigFromDisk(extensionRoot = getExtensionRoot()): {
-	tracked?: unknown;
-	local?: unknown;
+function readConfigLayer(input: {
+	directory: string;
+	fileName: string;
+	origin: string;
 	warnings: string[];
-} {
-	const warnings: string[] = [];
-	let tracked: unknown;
-	let local: unknown;
+}): ConfigLayer | undefined {
 	try {
-		tracked = readJsonIfExists(path.join(extensionRoot, "config.json"));
+		const value = readJsonIfExists(path.join(input.directory, input.fileName));
+		return value === undefined ? undefined : { origin: input.origin, value };
 	} catch {
-		warnings.push("config.json invalid; using defaults");
+		input.warnings.push(`${input.origin} invalid; ignoring this layer`);
+		return undefined;
 	}
-	try {
-		local = readJsonIfExists(path.join(extensionRoot, "config.local.json"));
-	} catch {
-		warnings.push("config.local.json invalid; ignoring local overrides");
-	}
-	return { tracked, local, warnings };
 }
 
-export function loadPiHistoryConfig(extensionRoot = getExtensionRoot()): ConfigLoadResult {
-	const loaded = loadConfigFromDisk(extensionRoot);
-	const normalized = normalizeConfig(loaded.tracked, loaded.local);
+export function loadConfigFromDisk(
+	extensionRoot = getExtensionRoot(),
+	userDir = PI_HISTORY_DIR,
+): { layers: ConfigLayer[]; warnings: string[] } {
+	const warnings: string[] = [];
+	const layers = [
+		readConfigLayer({
+			directory: extensionRoot,
+			fileName: USER_CONFIG_FILE_NAME,
+			origin: USER_CONFIG_FILE_NAME,
+			warnings,
+		}),
+		readConfigLayer({
+			directory: userDir,
+			fileName: USER_CONFIG_FILE_NAME,
+			origin: path.join(userDir, USER_CONFIG_FILE_NAME),
+			warnings,
+		}),
+		readConfigLayer({
+			directory: userDir,
+			fileName: USER_LOCAL_CONFIG_FILE_NAME,
+			origin: path.join(userDir, USER_LOCAL_CONFIG_FILE_NAME),
+			warnings,
+		}),
+	].flatMap((layer) => (layer ? [layer] : []));
+	return { layers, warnings };
+}
+
+export function loadPiHistoryConfig(
+	extensionRoot = getExtensionRoot(),
+	userDir = PI_HISTORY_DIR,
+): ConfigLoadResult {
+	const loaded = loadConfigFromDisk(extensionRoot, userDir);
+	const normalized = normalizeConfig(loaded.layers);
 	return {
 		config: normalized.config,
 		warnings: [...loaded.warnings, ...normalized.warnings],

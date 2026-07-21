@@ -11,9 +11,9 @@ import {
 	IsolationLevel,
 	loadConfigFromDisk,
 	normalizeConfig,
+	type ConfigLayer,
 	type PiHistoryConfig,
 } from "./config.ts";
-import { isRecord } from "./guards.ts";
 import { HistoryEditor } from "./history-editor.ts";
 import {
 	loadHistoryStore,
@@ -87,7 +87,7 @@ export type PiHistoryStore = {
 export type RuntimeInstallOptions = {
 	config?: Partial<PiHistoryConfig>;
 	now?: Clock;
-	readConfig?: () => { tracked?: unknown; local?: unknown; warnings?: string[] };
+	readConfig?: () => { layers?: ConfigLayer[]; warnings?: string[] };
 	resolveIdentity?: (ctx: PiHistoryContext) => Promise<ProjectIdentity>;
 	loadStore?: (input: {
 		identity: ProjectIdentity;
@@ -243,16 +243,19 @@ function installEditorWrapper(ctx: PiHistoryContext, state: RuntimeState): void 
 	state.editorInstalled = true;
 }
 
+const RUNTIME_CONFIG_ORIGIN = "runtime options";
+
 function loadRuntimeConfig(options: RuntimeInstallOptions): {
 	config: PiHistoryConfig;
 	warnings: string[];
 } {
 	const loaded = options.readConfig?.() ?? {};
-	const local = isRecord(loaded.local) ? loaded.local : {};
-	const normalized = normalizeConfig(loaded.tracked, {
-		...local,
-		...(options.config ?? {}),
-	});
+	// Runtime overrides (tests, embedding hosts) outrank every on-disk layer.
+	const layers = [
+		...(loaded.layers ?? []),
+		...(options.config ? [{ origin: RUNTIME_CONFIG_ORIGIN, value: options.config }] : []),
+	];
+	const normalized = normalizeConfig(layers);
 	return {
 		config: normalized.config,
 		warnings: [...(loaded.warnings ?? []), ...normalized.warnings],
