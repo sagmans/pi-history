@@ -39,7 +39,9 @@ export function isCursorAtTextEnd(input: {
 // reused because grapheme boundaries do not depend on locale. Matching and
 // slicing operate on grapheme clusters (not UTF-16 code units) so ANSI SGR
 // spans are never injected inside a surrogate pair or combining sequence.
-const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const graphemeSegmenter = new Intl.Segmenter(undefined, {
+	granularity: "grapheme",
+});
 
 function segmentGraphemes(text: string): string[] {
 	return [...graphemeSegmenter.segment(text)].map((segment) => segment.segment);
@@ -90,7 +92,11 @@ function findMatchPositions(labelGraphemes: string[], query: string): number[] {
 }
 
 /** Wrap matched grapheme segments with theme SGR and restore the row color. */
-function applyMatchHighlights(graphemes: string[], positions: number[], sgr: MatchHighlightSgr): string {
+function applyMatchHighlights(
+	graphemes: string[],
+	positions: number[],
+	sgr: MatchHighlightSgr,
+): string {
 	const matched = new Set(positions);
 	let result = "";
 	let inMatch = false;
@@ -109,4 +115,3 @@ function highlightBoundary(isMatch: boolean, inMatch: boolean, sgr: MatchHighlig
 	if (isMatch === inMatch) return "";
 	return isMatch ? sgr.match : sgr.restore;
 }
-

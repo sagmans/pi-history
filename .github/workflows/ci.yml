@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      # --ignore-scripts: nothing in this repo needs lifecycle scripts, and
+      # skipping them shrinks the supply-chain surface of CI installs.
+      - run: npm ci --ignore-scripts
+
+      - run: npm run check
+      - run: npm run typecheck
+      - run: npm test

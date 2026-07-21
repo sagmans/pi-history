@@ -1,4 +1,4 @@
 {
-  "maxEntries": 500,
-  "isolationLevel": "project"
+	"maxEntries": 500,
+	"isolationLevel": "project"
 }

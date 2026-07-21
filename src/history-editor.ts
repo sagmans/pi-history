@@ -1,29 +1,29 @@
 import {
-	CustomEditor,
 	type AppKeybinding,
+	CustomEditor,
 	type KeybindingsManager,
 } from "@earendil-works/pi-coding-agent";
 import {
-	decodeKittyPrintable,
-	fuzzyFilter,
-	matchesKey,
-	SelectList,
-	truncateToWidth,
 	type AutocompleteProvider,
+	decodeKittyPrintable,
 	type EditorComponent,
 	type EditorTheme,
+	fuzzyFilter,
+	matchesKey,
 	type SelectItem,
+	SelectList,
 	type SelectListLayoutOptions,
 	type TUI,
+	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 
 import type { HistoryEntry } from "./history-store.ts";
 import {
+	type EditorCursor,
 	findGhostSuggestion,
 	highlightMatches,
 	removeLastGrapheme,
-	type EditorCursor,
 } from "./search.ts";
 
 const DEFAULT_SEARCH_LIMIT = 7;
@@ -41,7 +41,9 @@ const NEXT_GHOST_WORD_PATTERN = /^[^\S\n]*\S+/u;
 
 // Locale-independent grapheme cluster segmenter. A single shared instance is
 // reused because grapheme boundaries do not depend on locale.
-const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const graphemeSegmenter = new Intl.Segmenter(undefined, {
+	granularity: "grapheme",
+});
 
 // Search input owned by SelectList: navigation, confirm, and cancel. Kept as a
 // readonly list so handleSearchInput delegates with one .some() pass instead of
@@ -168,15 +170,22 @@ export class HistoryEditor extends CustomEditor {
 	private buildSelectList(query: string): SelectList {
 		const entries = [...this.options.getEntries()];
 		const limit = this.options.searchLimit ?? DEFAULT_SEARCH_LIMIT;
-		const filtered = query.length > 0
-			? fuzzyFilter(entries, query, (entry) => entry.text).slice(0, limit)
-			: entries.slice(0, limit);
-		const items: SelectItem[] = filtered.length > 0
-			? filtered.map((entry) => ({
-					value: entry.text,
-					label: safeDisplayText(singleLine(entry.text)),
-				}))
-			: [{ value: "", label: entries.length > 0 ? "No match" : "No history yet" }];
+		const filtered =
+			query.length > 0
+				? fuzzyFilter(entries, query, (entry) => entry.text).slice(0, limit)
+				: entries.slice(0, limit);
+		const items: SelectItem[] =
+			filtered.length > 0
+				? filtered.map((entry) => ({
+						value: entry.text,
+						label: safeDisplayText(singleLine(entry.text)),
+					}))
+				: [
+						{
+							value: "",
+							label: entries.length > 0 ? "No match" : "No history yet",
+						},
+					];
 		const selectList = new SelectList(
 			items,
 			limit,
@@ -197,9 +206,7 @@ export class HistoryEditor extends CustomEditor {
 				const truncated = truncateToWidth(text, maxWidth, "");
 				return highlightMatches(truncated, query, {
 					match: this.options.getSearchMatchColorSgr(),
-					restore: isSelected
-						? this.options.getSearchSelectedColorSgr()
-						: ANSI_DEFAULT_FOREGROUND,
+					restore: isSelected ? this.options.getSearchSelectedColorSgr() : ANSI_DEFAULT_FOREGROUND,
 				});
 			},
 		};
@@ -288,9 +295,7 @@ export class HistoryEditor extends CustomEditor {
 		// (see renderGhostLine). Without this the suggestion lands one column
 		// right of the cursor.
 		const beforeGhost = target.line.slice(0, target.cursorStart);
-		const afterCursor = target.line.slice(
-			target.cursorStart + CURSOR_AT_END_RENDER.length,
-		);
+		const afterCursor = target.line.slice(target.cursorStart + CURSOR_AT_END_RENDER.length);
 		const remainingWidth = Math.max(0, width - visibleWidth(beforeGhost));
 		if (remainingWidth === 0) return lines;
 
@@ -311,9 +316,9 @@ export class HistoryEditor extends CustomEditor {
 		visibleGhost: string;
 		afterCursor: string;
 	}): string {
-		const [cursorGhost = "", ...rest] = this.splitGhostGraphemes(input.visibleGhost);
+		const [cursorGhost = "", ...rest] = HistoryEditor.splitGhostGraphemes(input.visibleGhost);
 		const restGhost = rest.join("");
-		const leadingSpaces = this.leadingSpacesOf(input.afterCursor);
+		const leadingSpaces = HistoryEditor.leadingSpacesOf(input.afterCursor);
 		const nonSpaces = input.afterCursor.slice(leadingSpaces.length);
 		// The cursor block used to occupy one cell; removing it frees that cell
 		// for the first grapheme, so only the remaining ghost width eats into
@@ -347,10 +352,10 @@ export class HistoryEditor extends CustomEditor {
 		const line = lines[index];
 		return line
 			? {
-				index,
-				line,
-				cursorStart: line.indexOf(CURSOR_AT_END_RENDER),
-			}
+					index,
+					line,
+					cursorStart: line.indexOf(CURSOR_AT_END_RENDER),
+				}
 			: undefined;
 	}
 
@@ -479,4 +484,3 @@ function singleLine(text: string): string {
 function safeDisplayText(text: string): string {
 	return text.replace(C0_C1_CONTROL_SEQUENCE, CONTROL_DISPLAY);
 }
-

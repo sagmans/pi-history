@@ -109,10 +109,7 @@ function readMaxEntries(source: unknown, origin: string): OptionCandidate<number
 	};
 }
 
-function readIsolationLevel(
-	source: unknown,
-	origin: string,
-): OptionCandidate<IsolationLevel> {
+function readIsolationLevel(source: unknown, origin: string): OptionCandidate<IsolationLevel> {
 	if (!isRecord(source) || !("isolationLevel" in source)) return { kind: "absent" };
 	if (isIsolationLevel(source.isolationLevel)) {
 		return { kind: "valid", value: source.isolationLevel };

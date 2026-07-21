@@ -7,8 +7,8 @@ import { hasErrorCode, isPositiveInteger, isRecord } from "./guards.ts";
 import {
 	PRIVATE_DIR_MODE,
 	PRIVATE_FILE_MODE,
-	validateStoredProjectRoot,
 	type ProjectIdentity,
+	validateStoredProjectRoot,
 } from "./project.ts";
 
 export const HISTORY_SCHEMA_VERSION = 1;
@@ -321,8 +321,7 @@ function historyClearsMemory(input: {
 	memory: PromptHistoryFile;
 }): boolean {
 	return (
-		input.latest.clearedAt !== undefined &&
-		input.latest.clearedAt > (input.memory.clearedAt ?? "")
+		input.latest.clearedAt !== undefined && input.latest.clearedAt > (input.memory.clearedAt ?? "")
 	);
 }
 
@@ -361,7 +360,12 @@ function normalizeHistoryBase(
 	if (typeof projectRoot !== "string") return undefined;
 	if (typeof createdAt !== "string") return undefined;
 	if (typeof updatedAt !== "string") return undefined;
-	return { schemaVersion: HISTORY_SCHEMA_VERSION, projectRoot, createdAt, updatedAt };
+	return {
+		schemaVersion: HISTORY_SCHEMA_VERSION,
+		projectRoot,
+		createdAt,
+		updatedAt,
+	};
 }
 
 function withOptionalClearMarker(
@@ -400,7 +404,10 @@ async function writeHistoryFile(filePath: string, history: PromptHistoryFile): P
 	const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
 	const data = `${JSON.stringify(history, null, 2)}\n`;
 	try {
-		await writeFile(tempPath, data, { encoding: "utf8", mode: PRIVATE_FILE_MODE });
+		await writeFile(tempPath, data, {
+			encoding: "utf8",
+			mode: PRIVATE_FILE_MODE,
+		});
 		await chmod(tempPath, PRIVATE_FILE_MODE);
 		await rename(tempPath, filePath);
 	} catch (error) {

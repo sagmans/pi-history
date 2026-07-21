@@ -1,19 +1,23 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 
-import type { ExecOptions, ExecResult, InputEvent, InputEventResult } from "@earendil-works/pi-coding-agent";
-
-import { IsolationLevel, type PiHistoryConfig } from "../src/config.ts";
+import type {
+	ExecOptions,
+	ExecResult,
+	InputEvent,
+	InputEventResult,
+} from "@earendil-works/pi-coding-agent";
 import {
-	installPiHistoryForTest,
-	shouldCaptureInput,
 	type EditorFactory,
+	installPiHistoryForTest,
 	type PiHistoryApi,
 	type PiHistoryContext,
 	type PiHistoryRuntime,
 	type PiHistoryStore,
 	type RuntimeInstallOptions,
+	shouldCaptureInput,
 } from "../index.ts";
+import { IsolationLevel, type PiHistoryConfig } from "../src/config.ts";
 import type {
 	ClearHistoryResult,
 	HistoryBlockReason,
@@ -21,8 +25,8 @@ import type {
 	RecordPromptResult,
 } from "../src/history-store.ts";
 import {
-	GLOBAL_SCOPE_KEY,
 	createProjectIdentity,
+	GLOBAL_SCOPE_KEY,
 	type ProjectExec,
 	type ProjectIdentity,
 } from "../src/project.ts";
@@ -31,7 +35,9 @@ import { testTheme } from "./theme-fixture.ts";
 const PROJECT_ROOT = "/workspace/project";
 
 test("global isolation resolves the global identity without git discovery", async () => {
-	const fixture = createRuntimeFixture({ isolationLevel: IsolationLevel.Global });
+	const fixture = createRuntimeFixture({
+		isolationLevel: IsolationLevel.Global,
+	});
 	let execCalls = 0;
 	fixture.pi.exec = async () => {
 		execCalls++;
@@ -55,7 +61,9 @@ test("global isolation resolves the global identity without git discovery", asyn
 });
 
 test("project isolation keeps git-based identity resolution", async () => {
-	const fixture = createRuntimeFixture({ isolationLevel: IsolationLevel.Project });
+	const fixture = createRuntimeFixture({
+		isolationLevel: IsolationLevel.Project,
+	});
 	let loadedIdentity: ProjectIdentity | undefined;
 	fixture.install({
 		resolveIdentity: undefined,
@@ -74,7 +82,9 @@ test("project isolation keeps git-based identity resolution", async () => {
 });
 
 test("status reports scope=global for global histories", async () => {
-	const fixture = createRuntimeFixture({ isolationLevel: IsolationLevel.Global });
+	const fixture = createRuntimeFixture({
+		isolationLevel: IsolationLevel.Global,
+	});
 	fixture.install({ resolveIdentity: undefined });
 	await fixture.emitSessionStart();
 
@@ -86,7 +96,9 @@ test("status reports scope=global for global histories", async () => {
 });
 
 test("clear on global scope confirms with host-wide wording", async () => {
-	const fixture = createRuntimeFixture({ isolationLevel: IsolationLevel.Global });
+	const fixture = createRuntimeFixture({
+		isolationLevel: IsolationLevel.Global,
+	});
 	fixture.install({ resolveIdentity: undefined });
 	await fixture.emitSessionStart();
 
@@ -102,7 +114,10 @@ test("interactive input records a prompt and continues", async () => {
 	fixture.install();
 	await fixture.emitSessionStart();
 
-	const result = await fixture.emitInput({ text: "review the diff", source: "interactive" });
+	const result = await fixture.emitInput({
+		text: "review the diff",
+		source: "interactive",
+	});
 
 	assert.deepEqual(result, { action: "continue" });
 	assert.deepEqual(fixture.store.recorded, ["review the diff"]);
@@ -135,7 +150,10 @@ test("capture errors notify the user but do not block prompt flow", async () => 
 	fixture.install();
 	await fixture.emitSessionStart();
 
-	const result = await fixture.emitInput({ text: "save me", source: "interactive" });
+	const result = await fixture.emitInput({
+		text: "save me",
+		source: "interactive",
+	});
 
 	assert.deepEqual(result, { action: "continue" });
 	assert.match(notificationText(fixture.context), /capture failed: disk full/);
@@ -147,8 +165,14 @@ test("blocked input capture warns once and continues", async () => {
 	fixture.install();
 	await fixture.emitSessionStart();
 
-	const first = await fixture.emitInput({ text: "alpha", source: "interactive" });
-	const second = await fixture.emitInput({ text: "beta", source: "interactive" });
+	const first = await fixture.emitInput({
+		text: "alpha",
+		source: "interactive",
+	});
+	const second = await fixture.emitInput({
+		text: "beta",
+		source: "interactive",
+	});
 
 	assert.deepEqual(first, { action: "continue" });
 	assert.deepEqual(second, { action: "continue" });
@@ -162,7 +186,10 @@ test("headless input capture never touches UI", async () => {
 	fixture.install();
 
 	await fixture.emitSessionStart();
-	const result = await fixture.emitInput({ text: "save me", source: "interactive" });
+	const result = await fixture.emitInput({
+		text: "save me",
+		source: "interactive",
+	});
 
 	assert.deepEqual(result, { action: "continue" });
 	assert.equal(fixture.store.recorded.length, 0);
@@ -255,7 +282,10 @@ type RuntimeFixture = {
 	options: RuntimeInstallOptions;
 	install: (extraOptions?: Partial<RuntimeInstallOptions>) => PiHistoryRuntime;
 	emitSessionStart: () => Promise<void>;
-	emitInput: (input: { text: string; source: InputEvent["source"] }) => Promise<InputEventResult | void>;
+	emitInput: (input: {
+		text: string;
+		source: InputEvent["source"];
+	}) => Promise<InputEventResult | void>;
 	runCommand: (args: string) => Promise<void>;
 };
 
@@ -350,7 +380,11 @@ class FakeStore implements PiHistoryStore {
 	async recordPrompt(text: string): Promise<RecordPromptResult> {
 		if (this.recordError) throw this.recordError;
 		if (this.blockReason) {
-			return { kind: "blocked", reason: this.blockReason, warnings: [...this.warnings] };
+			return {
+				kind: "blocked",
+				reason: this.blockReason,
+				warnings: [...this.warnings],
+			};
 		}
 		this.recorded = [text, ...this.recorded.filter((entryText) => entryText !== text)];
 		return { kind: "recorded", entryCount: this.recorded.length };
@@ -365,7 +399,10 @@ class FakeStore implements PiHistoryStore {
 }
 
 class FakeContext implements PiHistoryContext {
-	notifications: Array<{ message: string; type: "info" | "warning" | "error" | undefined }> = [];
+	notifications: Array<{
+		message: string;
+		type: "info" | "warning" | "error" | undefined;
+	}> = [];
 	confirmMessages: string[] = [];
 	cwd = PROJECT_ROOT;
 	editorFactory: EditorFactory | undefined;
@@ -410,11 +447,18 @@ class FakePi implements PiHistoryApi {
 		| ((event: unknown, ctx: PiHistoryContext) => void | Promise<void>)
 		| undefined;
 	inputHandler:
-		| ((event: InputEvent, ctx: PiHistoryContext) => InputEventResult | void | Promise<InputEventResult | void>)
+		| ((
+				event: InputEvent,
+				ctx: PiHistoryContext,
+		  ) => InputEventResult | void | Promise<InputEventResult | void>)
 		| undefined;
-	exec: ProjectExec = async (_command: string, _args: string[], _options?: ExecOptions) => failure();
+	exec: ProjectExec = async (_command: string, _args: string[], _options?: ExecOptions) =>
+		failure();
 
-	on(event: "session_start", handler: (event: unknown, ctx: PiHistoryContext) => void | Promise<void>): void;
+	on(
+		event: "session_start",
+		handler: (event: unknown, ctx: PiHistoryContext) => void | Promise<void>,
+	): void;
 	on(
 		event: "input",
 		handler: (
@@ -426,10 +470,16 @@ class FakePi implements PiHistoryApi {
 		event: "session_start" | "input",
 		handler:
 			| ((event: unknown, ctx: PiHistoryContext) => void | Promise<void>)
-			| ((event: InputEvent, ctx: PiHistoryContext) => InputEventResult | void | Promise<InputEventResult | void>),
+			| ((
+					event: InputEvent,
+					ctx: PiHistoryContext,
+			  ) => InputEventResult | void | Promise<InputEventResult | void>),
 	): void {
 		if (event === "session_start") {
-			this.sessionStartHandler = handler as (event: unknown, ctx: PiHistoryContext) => void | Promise<void>;
+			this.sessionStartHandler = handler as (
+				event: unknown,
+				ctx: PiHistoryContext,
+			) => void | Promise<void>;
 			return;
 		}
 		this.inputHandler = handler as (
@@ -440,7 +490,9 @@ class FakePi implements PiHistoryApi {
 
 	registerCommand(
 		name: string,
-		options: { handler: (args: string, ctx: PiHistoryContext) => Promise<void> },
+		options: {
+			handler: (args: string, ctx: PiHistoryContext) => Promise<void>;
+		},
 	): void {
 		this.commands.set(name, options);
 	}

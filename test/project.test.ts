@@ -9,15 +9,15 @@ import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
 
 import { IsolationLevel } from "../src/config.ts";
 import {
-	GLOBAL_SCOPE_KEY,
-	HISTORY_FILE_EXTENSION,
 	createGlobalIdentity,
 	createProjectIdentity,
 	defaultHistoryBaseDir,
+	GLOBAL_SCOPE_KEY,
+	HISTORY_FILE_EXTENSION,
+	type ProjectExec,
 	resolveProjectIdentity,
 	sanitizeProjectPath,
 	validateStoredProjectRoot,
-	type ProjectExec,
 } from "../src/project.ts";
 
 test("global identity uses a fixed sentinel scope and shared file name", () => {
@@ -44,7 +44,9 @@ test("global identity is stable across different hosts' cwds", () => {
 });
 
 test("stored global sentinel validates against global identity and rejects project files", () => {
-	const globalIdentity = createGlobalIdentity({ historyBaseDir: "/private/history" });
+	const globalIdentity = createGlobalIdentity({
+		historyBaseDir: "/private/history",
+	});
 
 	assert.deepEqual(
 		validateStoredProjectRoot({
@@ -101,7 +103,11 @@ test("linked worktrees share one identity via the common git dir", async () => {
 			"--is-bare-repository": success("false\n"),
 		});
 
-		const main = await resolveProjectIdentity({ cwd: repoRoot, exec, historyBaseDir });
+		const main = await resolveProjectIdentity({
+			cwd: repoRoot,
+			exec,
+			historyBaseDir,
+		});
 		const linked = await resolveProjectIdentity({
 			cwd: linkedWorktree,
 			exec,

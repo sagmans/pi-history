@@ -87,9 +87,19 @@ Requires Node.js >= 22.19.0 (tests use `node --experimental-transform-types`).
 
 ```bash
 npm ci --ignore-scripts
-npm run test
+npm run check       # biome lint + format
+npm run check:fix   # apply biome fixes
 npm run typecheck
+npm run test
 ```
+
+Two biome rules are disabled in `biome.json` on purpose (inline comments in
+biome.json silently break rule overrides, so the rationale lives here):
+
+- `suspicious/noConfusingVoidType` — `PiHistoryApi` mirrors pi's own
+  `ExtensionAPI` handler signatures, which use `| void` unions.
+- `suspicious/noControlCharactersInRegex` — the display sanitizer exists
+  precisely to match C0/C1 control characters.
 
 ## License
 

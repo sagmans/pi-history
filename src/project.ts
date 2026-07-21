@@ -40,19 +40,14 @@ export type ProjectRootValidation =
 	| { kind: "match" }
 	| { kind: "mismatch"; storedProjectRoot: string };
 
-export function createGlobalIdentity(input: {
-	historyBaseDir?: string;
-} = {}): ProjectIdentity {
+export function createGlobalIdentity(input: { historyBaseDir?: string } = {}): ProjectIdentity {
 	const storageFileName = `${GLOBAL_STORAGE_BASENAME}${HISTORY_FILE_EXTENSION}`;
 	return {
 		kind: "global",
 		isolationLevel: IsolationLevel.Global,
 		projectRoot: GLOBAL_SCOPE_KEY,
 		storageFileName,
-		historyFilePath: path.join(
-			input.historyBaseDir ?? defaultHistoryBaseDir(),
-			storageFileName,
-		),
+		historyFilePath: path.join(input.historyBaseDir ?? defaultHistoryBaseDir(), storageFileName),
 	};
 }
 
@@ -92,10 +87,7 @@ export function createProjectIdentity(input: {
 		isolationLevel: IsolationLevel.Project,
 		projectRoot: input.projectRoot,
 		storageFileName,
-		historyFilePath: path.join(
-			input.historyBaseDir ?? defaultHistoryBaseDir(),
-			storageFileName,
-		),
+		historyFilePath: path.join(input.historyBaseDir ?? defaultHistoryBaseDir(), storageFileName),
 	};
 }
 
@@ -105,9 +97,7 @@ export function defaultHistoryBaseDir(): string {
 
 export function sanitizeProjectPath(projectRoot: string): string {
 	// A hash keeps filenames bounded and avoids ambiguous path separator escaping.
-	const digest = createHash(HISTORY_FILE_HASH_ALGORITHM)
-		.update(projectRoot, "utf8")
-		.digest("hex");
+	const digest = createHash(HISTORY_FILE_HASH_ALGORITHM).update(projectRoot, "utf8").digest("hex");
 	return `${HISTORY_FILE_PREFIX}${digest}`;
 }
 
@@ -121,19 +111,14 @@ export function validateStoredProjectRoot(input: {
 	return {
 		kind: "mismatch",
 		storedProjectRoot:
-			typeof input.storedProjectRoot === "string"
-				? input.storedProjectRoot
-				: "<missing>",
+			typeof input.storedProjectRoot === "string" ? input.storedProjectRoot : "<missing>",
 	};
 }
 
 async function gitCommonDir(exec: ProjectExec, cwd: string): Promise<string | undefined> {
 	// --path-format=absolute (git >= 2.31) avoids the cwd-vs-toplevel ambiguity of
 	// a relative --git-common-dir; the plain form is a fallback for older git.
-	const absolute = await gitRevParse(exec, cwd, [
-		"--path-format=absolute",
-		"--git-common-dir",
-	]);
+	const absolute = await gitRevParse(exec, cwd, ["--path-format=absolute", "--git-common-dir"]);
 	if (absolute) return canonicalPath(path.resolve(cwd, absolute));
 	const relative = await gitRevParse(exec, cwd, ["--git-common-dir"]);
 	if (relative) return canonicalPath(path.resolve(cwd, relative));
@@ -143,9 +128,7 @@ async function gitCommonDir(exec: ProjectExec, cwd: string): Promise<string | un
 function repoRootFromCommonDir(commonDir: string): string {
 	// A non-bare repo reports <root>/.git; strip it so the working tree root is the
 	// key. Bare repos report their own directory, which is already the shared root.
-	return path.basename(commonDir) === GIT_DIR_BASENAME
-		? path.dirname(commonDir)
-		: commonDir;
+	return path.basename(commonDir) === GIT_DIR_BASENAME ? path.dirname(commonDir) : commonDir;
 }
 
 async function gitRevParse(
@@ -157,7 +140,7 @@ async function gitRevParse(
 		cwd,
 		timeout: GIT_DISCOVERY_TIMEOUT_MS,
 	}).catch(() => undefined);
-	if (!result || result.code !== 0) return undefined;
+	if (result?.code !== 0) return undefined;
 	const stdout = result.stdout.trim();
 	return stdout.length > 0 ? stdout : undefined;
 }

@@ -5,13 +5,13 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+	type ConfigLayer,
 	DEFAULT_ISOLATION_LEVEL,
 	DEFAULT_MAX_ENTRIES,
-	IsolationLevel,
 	getExtensionRoot,
+	IsolationLevel,
 	loadPiHistoryConfig,
 	normalizeConfig,
-	type ConfigLayer,
 } from "../src/config.ts";
 
 const SHIPPED_MAX_ENTRIES = 2_000;

@@ -13,16 +13,12 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+	type Clock,
 	HISTORY_SCHEMA_VERSION,
 	loadHistoryStore,
-	type Clock,
 	type PromptHistoryFile,
 } from "../src/history-store.ts";
-import {
-	GLOBAL_SCOPE_KEY,
-	createGlobalIdentity,
-	createProjectIdentity,
-} from "../src/project.ts";
+import { createGlobalIdentity, createProjectIdentity, GLOBAL_SCOPE_KEY } from "../src/project.ts";
 
 test("missing store loads empty and creates no file until first save", async () => {
 	await withStoreFixture(async ({ storePath, loadStore }) => {
@@ -36,7 +32,9 @@ test("missing store loads empty and creates no file until first save", async () 
 test("global store persists the sentinel scope in the shared history file", async () => {
 	const root = mkdtempSync(path.join(tmpdir(), "pi-history-global-store-"));
 	try {
-		const identity = createGlobalIdentity({ historyBaseDir: path.join(root, "history") });
+		const identity = createGlobalIdentity({
+			historyBaseDir: path.join(root, "history"),
+		});
 		const store = await loadHistoryStore({
 			identity,
 			maxEntries: 500,
@@ -45,12 +43,13 @@ test("global store persists the sentinel scope in the shared history file", asyn
 
 		await store.recordPrompt("global prompt");
 
-		const saved: PromptHistoryFile = JSON.parse(
-			readFileSync(identity.historyFilePath, "utf8"),
-		);
+		const saved: PromptHistoryFile = JSON.parse(readFileSync(identity.historyFilePath, "utf8"));
 		assert.equal(store.projectRoot, GLOBAL_SCOPE_KEY);
 		assert.equal(saved.projectRoot, GLOBAL_SCOPE_KEY);
-		assert.deepEqual(saved.entries.map((entry) => entry.text), ["global prompt"]);
+		assert.deepEqual(
+			saved.entries.map((entry) => entry.text),
+			["global prompt"],
+		);
 	} finally {
 		rmSync(root, { force: true, recursive: true });
 	}
@@ -102,7 +101,10 @@ test("exact duplicate moves to newest and increments useCount", async () => {
 		await store.recordPrompt("beta");
 		await store.recordPrompt("alpha");
 
-		assert.deepEqual(store.entries.map((entry) => entry.text), ["alpha", "beta"]);
+		assert.deepEqual(
+			store.entries.map((entry) => entry.text),
+			["alpha", "beta"],
+		);
 		assert.equal(store.entries[0]?.useCount, 2);
 		assert.equal(store.entries[0]?.createdAt, "2026-07-01T00:00:01.000Z");
 		assert.equal(store.entries[0]?.updatedAt, "2026-07-01T00:00:03.000Z");
@@ -117,7 +119,10 @@ test("history cap keeps newest entries", async () => {
 		await store.recordPrompt("beta");
 		await store.recordPrompt("gamma");
 
-		assert.deepEqual(store.entries.map((entry) => entry.text), ["gamma", "beta"]);
+		assert.deepEqual(
+			store.entries.map((entry) => entry.text),
+			["gamma", "beta"],
+		);
 	});
 });
 
@@ -131,7 +136,10 @@ test("lowering cap trims on next save", async () => {
 		const lowered = await loadStore({ maxEntries: 2 });
 		await lowered.recordPrompt("delta");
 
-		assert.deepEqual(lowered.entries.map((entry) => entry.text), ["delta", "gamma"]);
+		assert.deepEqual(
+			lowered.entries.map((entry) => entry.text),
+			["delta", "gamma"],
+		);
 	});
 });
 
@@ -191,10 +199,10 @@ test("concurrent saves merge latest file content", async () => {
 		await second.recordPrompt("from second session");
 		const reloaded = await loadStore({ clock });
 
-		assert.deepEqual(reloaded.entries.map((entry) => entry.text), [
-			"from second session",
-			"from first session",
-		]);
+		assert.deepEqual(
+			reloaded.entries.map((entry) => entry.text),
+			["from second session", "from first session"],
+		);
 	});
 });
 
@@ -213,10 +221,7 @@ test("parallel saves are serialized without losing prompts", async () => {
 		const reloaded = await loadStore();
 
 		assert.equal(reloaded.entries.length, prompts.length);
-		assert.deepEqual(
-			new Set(reloaded.entries.map((entry) => entry.text)),
-			new Set(prompts),
-		);
+		assert.deepEqual(new Set(reloaded.entries.map((entry) => entry.text)), new Set(prompts));
 	});
 });
 
@@ -251,7 +256,10 @@ test("clear prevents older open sessions from resurrecting prompts", async () =>
 		await second.recordPrompt("new prompt");
 		const reloaded = await loadStore({ clock });
 
-		assert.deepEqual(reloaded.entries.map((entry) => entry.text), ["new prompt"]);
+		assert.deepEqual(
+			reloaded.entries.map((entry) => entry.text),
+			["new prompt"],
+		);
 	});
 });
 
@@ -261,11 +269,11 @@ test("stale lock owned by a dead process is reclaimed", async () => {
 		mkdirSync(lockPath, { recursive: true, mode: 0o700 });
 		writeFileSync(
 			path.join(lockPath, "owner.json"),
-			JSON.stringify({
+			`${JSON.stringify({
 				pid: 999_999,
 				host: "stale-host",
 				createdAt: "2000-01-01T00:00:00.000Z",
-			}) + "\n",
+			})}\n`,
 			{ encoding: "utf8", mode: 0o600 },
 		);
 
@@ -281,7 +289,10 @@ type Fixture = {
 	projectRoot: string;
 	historyBaseDir: string;
 	storePath: string;
-	loadStore: (options?: { maxEntries?: number; clock?: Clock }) => Promise<Awaited<ReturnType<typeof loadHistoryStore>>>;
+	loadStore: (options?: {
+		maxEntries?: number;
+		clock?: Clock;
+	}) => Promise<Awaited<ReturnType<typeof loadHistoryStore>>>;
 };
 
 async function withStoreFixture(testBody: (fixture: Fixture) => Promise<void>): Promise<void> {

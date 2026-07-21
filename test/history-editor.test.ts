@@ -3,10 +3,10 @@ import test from "node:test";
 
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import {
+	type EditorTheme,
 	KeybindingsManager,
 	matchesKey,
 	TUI_KEYBINDINGS,
-	type EditorTheme,
 } from "@earendil-works/pi-tui";
 
 import { HistoryEditor, type WrappedHistoryEditor } from "../src/history-editor.ts";
@@ -44,7 +44,9 @@ test("wrapper delegates normal input to the previous editor", () => {
 });
 
 test("ghost is absent for empty and exact buffers", () => {
-	const emptyFixture = createEditorFixture({ entries: [entry("review the diff")] });
+	const emptyFixture = createEditorFixture({
+		entries: [entry("review the diff")],
+	});
 	const exactFixture = createEditorFixture({
 		text: "review the diff",
 		entries: [entry("review the diff")],
@@ -276,7 +278,9 @@ test("reverse search selection follows configured up and down keybindings", () =
 });
 
 test("reverse search arrow keys request a render so selection moves redraw", () => {
-	const fixture = createEditorFixture({ entries: [entry("first"), entry("second")] });
+	const fixture = createEditorFixture({
+		entries: [entry("first"), entry("second")],
+	});
 
 	fixture.editor.handleInput(CTRL_R);
 	const rendersBefore = fixture.renderCount();
@@ -332,7 +336,9 @@ test("ghost rendering works against the real CustomEditor seam", () => {
 	// dim + reverse video; the remainder ("diff") stays dim. Use includes with
 	// a shared ESC string instead of a regex literal so static analyzers do not
 	// flag raw control bytes in the pattern.
-	assert.ok(rendered.includes(`${ESCAPE_SEQ}[2;7m ${ESCAPE_SEQ}[0m${ESCAPE_SEQ}[2mdiff${ESCAPE_SEQ}[0m`));
+	assert.ok(
+		rendered.includes(`${ESCAPE_SEQ}[2;7m ${ESCAPE_SEQ}[0m${ESCAPE_SEQ}[2mdiff${ESCAPE_SEQ}[0m`),
+	);
 });
 
 test("ghost first char sits in the cursor cell, not one column right", () => {
@@ -347,7 +353,11 @@ test("ghost first char sits in the cursor cell, not one column right", () => {
 	// first ghost char. Old buggy form kept the block and appended the ghost,
 	// producing a double space and a +1 column shift.
 	assert.ok(!rendered.includes(`review the${ESCAPE_SEQ}[7m ${ESCAPE_SEQ}[0m${ESCAPE_SEQ}[2m diff`));
-	assert.ok(rendered.includes(`review the${ESCAPE_SEQ}[2;7m ${ESCAPE_SEQ}[0m${ESCAPE_SEQ}[2mdiff${ESCAPE_SEQ}[0m`));
+	assert.ok(
+		rendered.includes(
+			`review the${ESCAPE_SEQ}[2;7m ${ESCAPE_SEQ}[0m${ESCAPE_SEQ}[2mdiff${ESCAPE_SEQ}[0m`,
+		),
+	);
 });
 
 test("ghost keeps a multi-codepoint grapheme whole inside the cursor cell", () => {
@@ -379,11 +389,9 @@ type EditorFixture = {
 	renderCount: () => number;
 };
 
-function createEditorFixture(options: {
-	text?: string;
-	cursor?: { line: number; col: number };
-	entries?: HistoryEntry[];
-} = {}): EditorFixture {
+function createEditorFixture(
+	options: { text?: string; cursor?: { line: number; col: number }; entries?: HistoryEntry[] } = {},
+): EditorFixture {
 	const inner = new FakeInner(options.text ?? "", options.cursor);
 	const tui = createTui();
 	const editor = createHistoryEditor({

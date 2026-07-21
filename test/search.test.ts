@@ -57,10 +57,7 @@ test("highlightMatches keeps multi-codepoint ZWJ graphemes intact", () => {
 });
 
 test("ghost suggestion uses newest prefix match at cursor end", () => {
-	const entries = [
-		entry("review the diff for bugs"),
-		entry("review the diff for style"),
-	];
+	const entries = [entry("review the diff for bugs"), entry("review the diff for style")];
 
 	assert.equal(
 		findGhostSuggestion({

@@ -8,26 +8,26 @@ import {
 import type { EditorComponent, EditorTheme, TUI } from "@earendil-works/pi-tui";
 
 import {
+	type ConfigLayer,
 	IsolationLevel,
 	loadConfigFromDisk,
 	normalizeConfig,
-	type ConfigLayer,
 	type PiHistoryConfig,
 } from "./config.ts";
 import { HistoryEditor } from "./history-editor.ts";
 import {
-	loadHistoryStore,
 	type ClearHistoryResult,
 	type Clock,
 	type HistoryBlockReason,
 	type HistoryEntry,
+	loadHistoryStore,
 	type RecordPromptResult,
 } from "./history-store.ts";
 import {
 	createGlobalIdentity,
-	resolveProjectIdentity,
 	type ProjectExec,
 	type ProjectIdentity,
+	resolveProjectIdentity,
 } from "./project.ts";
 
 const COMMAND_NAME = "pi-history";
@@ -137,8 +137,7 @@ export function installPiHistoryForTest(
 		options.resolveIdentity ??
 		(config.isolationLevel === IsolationLevel.Global
 			? () => Promise.resolve(createGlobalIdentity())
-			: (ctx: PiHistoryContext) =>
-					resolveProjectIdentity({ cwd: ctx.cwd, exec: pi.exec }));
+			: (ctx: PiHistoryContext) => resolveProjectIdentity({ cwd: ctx.cwd, exec: pi.exec }));
 	const loadStore = options.loadStore ?? loadHistoryStore;
 
 	async function initialize(ctx: PiHistoryContext): Promise<void> {
@@ -309,9 +308,7 @@ async function handleClearCommand(
 	}
 	notify(
 		ctx,
-		globalScope
-			? "pi-history cleared (global scope)"
-			: "pi-history cleared for current project",
+		globalScope ? "pi-history cleared (global scope)" : "pi-history cleared for current project",
 		"info",
 	);
 }
@@ -331,10 +328,7 @@ function handleRecordResult(
 	);
 }
 
-function buildStatusMessage(
-	state: RuntimeState,
-	store: PiHistoryStore | undefined,
-): string {
+function buildStatusMessage(state: RuntimeState, store: PiHistoryStore | undefined): string {
 	if (!store || !state.identity) {
 		return state.lastError
 			? `pi-history unavailable: ${state.lastError}`
@@ -383,11 +377,7 @@ function notifyOnce(
 	notify(ctx, message, type);
 }
 
-function notify(
-	ctx: PiHistoryContext,
-	message: string,
-	type: "info" | "warning" | "error",
-): void {
+function notify(ctx: PiHistoryContext, message: string, type: "info" | "warning" | "error"): void {
 	if (!canUseUi(ctx)) return;
 	ctx.ui.notify(message, type);
 }

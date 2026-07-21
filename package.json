@@ -1,42 +1,45 @@
 {
-  "name": "pi-history",
-  "version": "0.1.0",
-  "description": "Ghost completion for prompt history across pi sessions",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/sagmans/pi-history.git"
-  },
-  "homepage": "https://github.com/sagmans/pi-history#readme",
-  "bugs": "https://github.com/sagmans/pi-history/issues",
-  "keywords": [
-    "pi-package",
-    "pi",
-    "pi-extension",
-    "history",
-    "ghost-completion"
-  ],
-  "type": "module",
-  "pi": {
-    "extensions": [
-      "./index.ts"
-    ]
-  },
-  "scripts": {
-    "test": "node --experimental-transform-types --test test/*.test.ts",
-    "typecheck": "tsc --noEmit"
-  },
-  "engines": {
-    "node": ">=22.19.0"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*"
-  },
-  "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.80.3",
-    "@earendil-works/pi-tui": "0.80.3",
-    "@types/node": "24.13.2",
-    "typescript": "7.0.2"
-  }
+	"name": "pi-history",
+	"version": "0.1.0",
+	"description": "Ghost completion for prompt history across pi sessions",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/sagmans/pi-history.git"
+	},
+	"homepage": "https://github.com/sagmans/pi-history#readme",
+	"bugs": "https://github.com/sagmans/pi-history/issues",
+	"keywords": [
+		"pi-package",
+		"pi",
+		"pi-extension",
+		"history",
+		"ghost-completion"
+	],
+	"type": "module",
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		]
+	},
+	"scripts": {
+		"test": "node --experimental-transform-types --test test/*.test.ts",
+		"typecheck": "tsc --noEmit",
+		"check": "biome check .",
+		"check:fix": "biome check --write ."
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.3",
+		"@earendil-works/pi-coding-agent": "0.80.3",
+		"@earendil-works/pi-tui": "0.80.3",
+		"@types/node": "24.13.2",
+		"typescript": "7.0.2"
+	}
 }
