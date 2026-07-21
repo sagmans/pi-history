@@ -101,6 +101,10 @@ biome.json silently break rule overrides, so the rationale lives here):
 - `suspicious/noControlCharactersInRegex` — the display sanitizer exists
   precisely to match C0/C1 control characters.
 
+Git hooks via husky: pre-commit runs `npm run check`, pre-push runs
+`npm run typecheck && npm test`. Hooks install on `npm install` (`prepare`
+script); CI skips them with `--ignore-scripts`.
+
 ## License
 
 [MIT](LICENSE)
