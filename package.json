@@ -26,7 +26,8 @@
 		"test": "node --experimental-transform-types --test test/*.test.ts",
 		"typecheck": "tsc --noEmit",
 		"check": "biome check .",
-		"check:fix": "biome check --write ."
+		"check:fix": "biome check --write .",
+		"verify": "npm run check && npm run typecheck && npm test"
 	},
 	"engines": {
 		"node": ">=22.19.0"
@@ -37,8 +38,8 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.3",
-		"@earendil-works/pi-coding-agent": "0.80.3",
-		"@earendil-works/pi-tui": "0.80.3",
+		"@earendil-works/pi-coding-agent": "0.81.1",
+		"@earendil-works/pi-tui": "0.81.1",
 		"@types/node": "24.13.2",
 		"husky": "9.1.7",
 		"typescript": "7.0.2"

@@ -49,6 +49,7 @@ const foregroundColors: ThemeForegroundColors = {
 	thinkingMedium: "#00aaaa",
 	thinkingHigh: "#aa00aa",
 	thinkingXhigh: "#ff00ff",
+	thinkingMax: "#ff00ff",
 	bashMode: "#00aa00",
 };
 
