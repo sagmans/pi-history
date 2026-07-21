@@ -26,8 +26,7 @@
 		"test": "node --experimental-transform-types --test test/*.test.ts",
 		"typecheck": "tsc --noEmit",
 		"check": "biome check .",
-		"check:fix": "biome check --write .",
-		"prepare": "husky"
+		"check:fix": "biome check --write ."
 	},
 	"engines": {
 		"node": ">=22.19.0"

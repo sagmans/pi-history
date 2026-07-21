@@ -102,8 +102,14 @@ biome.json silently break rule overrides, so the rationale lives here):
   precisely to match C0/C1 control characters.
 
 Git hooks via husky: pre-commit runs `npm run check`, pre-push runs
-`npm run typecheck && npm test`. Hooks install on `npm install` (`prepare`
-script); CI skips them with `--ignore-scripts`.
+`npm run typecheck && npm test`. Hooks are dev-only: there is deliberately no
+`prepare` script, because pi runs `npm install` inside its package clones and
+hooks must never install on user machines. Contributors opt in once after
+cloning:
+
+```bash
+npx husky
+```
 
 ## License
 
