@@ -20,15 +20,15 @@ function layer(value: unknown, origin = "config.json"): ConfigLayer {
 	return { origin, value };
 }
 
-test("loads shipped config with managed history cap and global isolation", () => {
+test("loads shipped config with managed history cap and project isolation", () => {
 	// Empty user dir keeps the test hermetic; real user config must not leak in.
 	withConfigFixture((_repoDir, userDir) => {
 		const result = loadPiHistoryConfig(getExtensionRoot(), userDir);
 
 		assert.equal(result.config.maxEntries, SHIPPED_MAX_ENTRIES);
-		// Shipped config opts into global isolation so prompt history is shared
-		// across repos on a host.
-		assert.equal(result.config.isolationLevel, IsolationLevel.Global);
+		// Shipped config must default to project isolation: cross-project
+		// history sharing is an explicit user opt-in, never a silent default.
+		assert.equal(result.config.isolationLevel, IsolationLevel.Project);
 		assert.deepEqual(result.warnings, []);
 	});
 });

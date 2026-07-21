@@ -14,10 +14,10 @@ export enum IsolationLevel {
 
 const ISOLATION_LEVELS = [IsolationLevel.Project, IsolationLevel.Global] as const;
 
-// Built-in fallback when no config layer supplies a value. The shipped tracked
-// config.json deliberately opts users into global isolation because cross-project
-// recall is the extension's headline feature; this fallback only guards against
-// missing or broken config and therefore stays at the safer project scope.
+// Built-in fallback when no config layer supplies a value. Both this fallback
+// and the shipped tracked config.json default to project isolation: history
+// from one repository must never surface in another unless the user explicitly
+// opts into global sharing in their own user config.
 export const DEFAULT_ISOLATION_LEVEL: IsolationLevel = IsolationLevel.Project;
 
 // Data directory shared with the history store. User config lives here (not

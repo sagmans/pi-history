@@ -173,7 +173,7 @@ export function installPiHistoryForTest(
 	}
 
 	pi.registerCommand(COMMAND_NAME, {
-		description: "Inspect or clear private project prompt history",
+		description: "Inspect or clear private prompt history for the current scope",
 		handler: async (args, ctx) => {
 			await handleCommand(args, ctx, state, ensureInitialized);
 		},

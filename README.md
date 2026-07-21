@@ -3,13 +3,14 @@
 Ghost completion for prompt history across [pi](https://github.com/earendil-works/pi-coding-agent) sessions.
 
 `pi-history` records your real prompts and keeps the data local. By default
-one history is shared across all projects on the host (`global` isolation).
-With `project` isolation, project identity is the shared git common
-directory, so every linked worktree of a repository (including bare-repo
-worktrees) recalls one history; non-git directories fall back to the current
-directory. History files live only under `~/.pi/agent/pi-history/`, with
-private directory and file permissions. File names use a bounded hash of the
-absolute project path to avoid collisions and filesystem filename limits.
+each project gets its own history (`project` isolation). Project identity is
+the shared git common directory, so every linked worktree of a repository
+(including bare-repo worktrees) recalls one history; non-git directories fall
+back to the current directory. You can opt into one host-wide history
+(`global` isolation) if you want cross-project recall. History files live only
+under `~/.pi/agent/pi-history/`, with private directory and file permissions.
+File names use a bounded hash of the absolute project path to avoid collisions
+and filesystem filename limits.
 
 ## Features
 
@@ -55,21 +56,19 @@ CI runs the full verify suite on Ubuntu and macOS across both Node versions.
 
 ## Configuration
 
-The shipped default records one history shared across all projects on the
-host (cross-project ghost completion is the point of this extension):
+The shipped default keeps one history per project:
 
 ```json
 {
   "maxEntries": 2000,
-  "isolationLevel": "global"
+  "isolationLevel": "project"
 }
 ```
-
-To opt out, create `~/.pi/agent/pi-history/config.json` (see
-`config.local.example.json` for the shape) and set `"isolationLevel":
-"project"` for per-project history. User config lives in the pi-history data
-directory — not inside the installed package — so it survives `pi update`
-(pi resets and cleans its package clones on update).
+To share one history across all projects on the host, create
+`~/.pi/agent/pi-history/config.json` (see `config.local.example.json` for the
+shape) and set `"isolationLevel": "global"`. User config lives in the
+pi-history data directory — not inside the installed package — so it survives
+`pi update` (pi resets and cleans its package clones on update).
 
 Precedence, lowest to highest:
 
@@ -87,10 +86,10 @@ override is never silently masked by lower-precedence config.
 All history stays on your machine under `~/.pi/agent/pi-history/`. Nothing is
 sent anywhere. Directory and files are created with private permissions.
 
-Note what the shipped default means: with global isolation, prompts from
-every project (work repos included) land in one shared `global.json` and are
-recallable from any directory. Switch to `"isolationLevel": "project"` if
-histories must stay separated per repository.
+Note what the scope choice means: with global isolation, prompts from every
+project (work repos included) land in one shared `global.json` and are
+recallable from any directory. That is why global is opt-in only. The shipped
+default keeps each repository's prompts in its own file.
 
 ## Development
 
@@ -124,4 +123,5 @@ npx husky
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) ·
+[Releases](RELEASE.md)

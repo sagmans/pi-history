@@ -1,4 +1,4 @@
 {
 	"maxEntries": 2000,
-	"isolationLevel": "global"
+	"isolationLevel": "project"
 }
