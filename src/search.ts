@@ -45,6 +45,13 @@ function segmentGraphemes(text: string): string[] {
 	return [...graphemeSegmenter.segment(text)].map((segment) => segment.segment);
 }
 
+// Backspace deletes one perceived character, not one UTF-16 code unit: plain
+// slice(0, -1) orphans the high surrogate of astral characters (emoji) and
+// halves ZWJ/flag clusters. Shared by the reverse-search input handler.
+export function removeLastGrapheme(text: string): string {
+	return segmentGraphemes(text).slice(0, -1).join("");
+}
+
 /**
  * Embed theme-provided foreground spans where graphemes match the query.
  * Grapheme-cluster iteration (via Intl.Segmenter) keeps multi-codepoint

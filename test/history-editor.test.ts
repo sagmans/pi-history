@@ -18,6 +18,7 @@ const CTRL_R = "\x12";
 const CTRL_X = "\x18";
 const ALT_RIGHT = "\x1b[1;3C";
 const ENTER = "\r";
+const BACKSPACE = "\x7f";
 const ESCAPE_SEQ = "\x1b";
 const ESCAPE = "\x1b";
 const CURSOR_RENDER = "\x1b[7m \x1b[0m";
@@ -284,6 +285,19 @@ test("reverse search arrow keys request a render so selection moves redraw", () 
 	// SelectList.handleInput fires only onSelectionChange for arrows; without
 	// an explicit requestRender the live TUI would never redraw the moved marker.
 	assert.equal(fixture.renderCount(), rendersBefore + 1);
+});
+
+test("reverse-search backspace deletes a whole grapheme, not a UTF-16 unit", () => {
+	const fixture = createEditorFixture({ entries: [] });
+
+	fixture.editor.handleInput(CTRL_R);
+	fixture.editor.handleInput("\u{1F525}"); // astral emoji = surrogate pair
+	fixture.editor.handleInput(BACKSPACE);
+	assert.equal(fixture.inner.text, "");
+
+	fixture.editor.handleInput("a");
+	fixture.editor.handleInput(BACKSPACE);
+	assert.equal(fixture.inner.text, "");
 });
 
 test("enter on no reverse-search match applies the typed query", () => {

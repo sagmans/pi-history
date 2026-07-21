@@ -6,6 +6,7 @@ import {
 	findGhostSuggestion,
 	highlightMatches,
 	isCursorAtTextEnd,
+	removeLastGrapheme,
 } from "../src/search.ts";
 import { testHighlightSgr } from "./theme-fixture.ts";
 
@@ -134,3 +135,16 @@ function entry(text: string): HistoryEntry {
 		useCount: 1,
 	};
 }
+
+test("removeLastGrapheme deletes one full grapheme, not one UTF-16 unit", () => {
+	assert.equal(removeLastGrapheme("abc"), "ab");
+	// Astral emoji: slice(0,-1) would orphan the high surrogate.
+	assert.equal(removeLastGrapheme("ab\u{1F525}"), "ab");
+	// ZWJ cluster: multiple code points, one perceived character.
+	assert.equal(removeLastGrapheme("x\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"), "x");
+	// Flag: two regional indicators, one grapheme.
+	assert.equal(removeLastGrapheme("y\u{1F1FA}\u{1F1F8}"), "y");
+	// Combining sequence stays whole.
+	assert.equal(removeLastGrapheme("cafe\u0301"), "caf");
+	assert.equal(removeLastGrapheme(""), "");
+});

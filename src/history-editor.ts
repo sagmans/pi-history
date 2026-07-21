@@ -22,6 +22,7 @@ import type { HistoryEntry } from "./history-store.ts";
 import {
 	findGhostSuggestion,
 	highlightMatches,
+	removeLastGrapheme,
 	type EditorCursor,
 } from "./search.ts";
 
@@ -229,7 +230,7 @@ export class HistoryEditor extends CustomEditor {
 		}
 
 		if (matchesKey(data, "backspace")) {
-			this.updateSearchQuery(state.query.slice(0, -1));
+			this.updateSearchQuery(removeLastGrapheme(state.query));
 			return;
 		}
 
