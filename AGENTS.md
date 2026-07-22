@@ -7,8 +7,8 @@ requests are unsupported; read the [participation policy](CONTRIBUTING.md).
 
 - Setup: run `npm ci --ignore-scripts` from the repository root.
 - Verification: run `npm run verify` while iterating and `npm run verify:ci`
-  before pushing. [`README.md`](README.md#maintainer-development) documents the
-  available checks.
+  before pushing. [`docs/maintainer-development.md`](docs/maintainer-development.md)
+  documents the available checks.
 - Runtime loading: follow the isolated
   [maintainer smoke test](docs/maintainer-smoke.md).
 - Security: follow [`SECURITY.md`](SECURITY.md), including private vulnerability
