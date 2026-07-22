@@ -52,7 +52,7 @@ pi install git:github.com/sagmans/pi-history@v0.1.0
 | pi | `>=0.80.x`, tested at `0.81.1` | Peer range is `*` per pi packaging rules; that is a loading requirement, not a support promise |
 | Terminal | tested under [herdr](https://github.com/fitchmultz/herdr) and standard macOS terminals | Ghost completion is best effort and degrades gracefully (see Features) |
 
-CI runs the full verify suite on Ubuntu and macOS across both Node versions.
+CI runs `npm run verify:ci` on Ubuntu and macOS across both Node versions.
 
 ## Configuration
 
@@ -101,6 +101,9 @@ npm run check       # biome lint + format
 npm run check:fix   # apply biome fixes
 npm run typecheck
 npm run test
+npm run verify      # deterministic offline checks
+npm run audit       # network-dependent high-severity dependency gate
+npm run verify:ci   # complete maintainer and CI gate
 ```
 
 Two biome rules are disabled in `biome.json` on purpose (inline comments in

@@ -14,7 +14,7 @@ changes; patch bumps are fixes only. The git tag (`vX.Y.Z`) and
 1. Candidate lands on `main` through a reviewed PR (squash merge).
 2. Full CI matrix green on the exact merged SHA: Ubuntu + macOS ×
    Node 22.19.0 + 24, audit gate included.
-3. `npm run verify` green locally for the maintainer.
+3. `npm run verify:ci` green locally for the maintainer.
 4. Install smoke in a disposable pi home against the exact SHA:
 
    ```bash
