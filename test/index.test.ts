@@ -306,9 +306,54 @@ test("capture errors notify the user but do not block prompt flow", async () => 
 		text: "save me",
 		source: "interactive",
 	});
+	await fixture.runCommand("status");
 
 	assert.deepEqual(result, { action: "continue" });
 	assert.match(notificationText(fixture.context), /capture failed: disk full/);
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=1; state=storage_degraded; initialization=ready; storage=degraded; storageReason=record_failed; editor=ready; cap=500; scope=project",
+		type: "warning",
+	});
+});
+
+test("successful capture restores storage readiness", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.store.recordError = new Error("transient capture failure");
+	fixture.install();
+	await fixture.emitSessionStart();
+	await fixture.emitInput({ text: "first", source: "interactive" });
+	await fixture.runCommand("status");
+	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /state=storage_degraded/);
+
+	fixture.store.recordError = undefined;
+	await fixture.emitInput({ text: "second", source: "interactive" });
+	await fixture.runCommand("status");
+
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=1; cap=500; scope=project",
+		type: "info",
+	});
+});
+
+test("persistent write blocking outranks transient storage degradation", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.store.recordError = new Error("transient capture failure");
+	fixture.install();
+	await fixture.emitSessionStart();
+	await fixture.emitInput({ text: "first", source: "interactive" });
+	await fixture.runCommand("status");
+	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /state=storage_degraded/);
+
+	fixture.store.blockReason = "project_root_mismatch";
+	await fixture.runCommand("status");
+
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=1; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=project_root_mismatch; editor=ready; cap=500; scope=project",
+		type: "warning",
+	});
 });
 
 test("blocked input capture warns once and continues", async () => {
@@ -379,6 +424,46 @@ test("clear confirms and clears active in-memory store", async () => {
 	assert.equal(fixture.store.clearCount, 1);
 	assert.deepEqual(fixture.store.recorded, []);
 	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /cleared/);
+});
+
+test("clear errors notify locally and report safe storage degradation", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.store.clearError = new Error("clear secret at /private/history");
+	fixture.install();
+	await fixture.emitSessionStart();
+
+	await fixture.runCommand("clear");
+	await fixture.runCommand("status");
+
+	assert.match(
+		notificationText(fixture.context),
+		/clear failed: clear secret at \/private\/history/,
+	);
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=1; state=storage_degraded; initialization=ready; storage=degraded; storageReason=clear_failed; editor=ready; cap=500; scope=project",
+		type: "warning",
+	});
+});
+
+test("successful clear restores storage readiness", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.store.clearError = new Error("transient clear failure");
+	fixture.install();
+	await fixture.emitSessionStart();
+	await fixture.runCommand("clear");
+	await fixture.runCommand("status");
+	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /state=storage_degraded/);
+
+	fixture.store.clearError = undefined;
+	await fixture.runCommand("clear");
+	await fixture.runCommand("status");
+
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=0; cap=500; scope=project",
+		type: "info",
+	});
 });
 
 test("clear cancellation leaves store intact", async () => {
@@ -495,6 +580,7 @@ class FakeStore implements PiHistoryStore {
 	entriesSnapshot: HistoryEntry[] = [];
 	blockReason: HistoryBlockReason | undefined;
 	recordError: Error | undefined;
+	clearError: Error | undefined;
 	clearCount = 0;
 
 	constructor(
@@ -537,6 +623,7 @@ class FakeStore implements PiHistoryStore {
 
 	async clear(): Promise<ClearHistoryResult> {
 		this.clearCount++;
+		if (this.clearError) throw this.clearError;
 		this.recorded = [];
 		this.entriesSnapshot = [];
 		return { kind: "cleared" };

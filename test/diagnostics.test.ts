@@ -84,3 +84,21 @@ for (const storageReason of ["corrupt_history", "project_root_mismatch"] as cons
 		);
 	});
 }
+
+for (const storageReason of ["record_failed", "clear_failed"] as const) {
+	test(`${storageReason} diagnostic reports transient degradation`, () => {
+		const snapshot: DiagnosticSnapshot = {
+			state: "storage_degraded",
+			initialization: "ready",
+			storage: "degraded",
+			storageReason,
+			editor: "ready",
+			cap: 2000,
+			scope: "project",
+		};
+		assert.equal(
+			formatDiagnostic(snapshot),
+			`pi-history: diagnosticsVersion=1; state=storage_degraded; initialization=ready; storage=degraded; storageReason=${storageReason}; editor=ready; cap=2000; scope=project`,
+		);
+	});
+}

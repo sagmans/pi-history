@@ -6,6 +6,7 @@ const FIELD_SEPARATOR = "; ";
 
 export type DiagnosticScope = "project" | "global";
 export type StorageBlockReason = "corrupt_history" | "project_root_mismatch";
+export type StorageDegradationReason = "record_failed" | "clear_failed";
 
 export type HealthyDiagnosticSnapshot = Readonly<{
 	state: "healthy";
@@ -50,11 +51,22 @@ type WriteBlockedDiagnosticSnapshot = Readonly<{
 	scope: DiagnosticScope;
 }>;
 
+type StorageDegradedDiagnosticSnapshot = Readonly<{
+	state: "storage_degraded";
+	initialization: "ready";
+	storage: "degraded";
+	storageReason: StorageDegradationReason;
+	editor: "ready";
+	cap: number;
+	scope: DiagnosticScope;
+}>;
+
 export type DiagnosticSnapshot =
 	| HealthyDiagnosticSnapshot
 	| ConfigurationLoadFailureSnapshot
 	| ScopedInitializationFailureSnapshot
-	| WriteBlockedDiagnosticSnapshot;
+	| WriteBlockedDiagnosticSnapshot
+	| StorageDegradedDiagnosticSnapshot;
 
 export function formatDiagnostic(snapshot: DiagnosticSnapshot): string {
 	// Field order is compatibility-sensitive so agents can compare lines without parsing prose.
@@ -67,7 +79,7 @@ export function formatDiagnostic(snapshot: DiagnosticSnapshot): string {
 		fields.push(`initializationReason=${snapshot.initializationReason}`);
 	}
 	fields.push(`storage=${snapshot.storage}`);
-	if (snapshot.state === "write_blocked") {
+	if (snapshot.state === "write_blocked" || snapshot.state === "storage_degraded") {
 		fields.push(`storageReason=${snapshot.storageReason}`);
 	}
 	fields.push(`editor=${snapshot.editor}`);

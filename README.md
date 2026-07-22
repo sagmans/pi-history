@@ -104,6 +104,15 @@ Storage that safely refuses writes uses `state=write_blocked` and one reason:
 Write-blocked status omits `entries`, prompt contents, project roots, and storage
 paths.
 
+Unexpected mutation failures use `state=storage_degraded` and one reason:
+
+- `record_failed`
+- `clear_failed`
+
+Storage-degraded status uses warning severity and omits `entries`. A later
+successful record or clear restores storage readiness; persistent write blocking
+takes precedence over transient degradation.
+
 Share only a `pi-history:` line containing `diagnosticsVersion=1`. Versioned
 diagnostics omit prompt text, raw errors, and exact filesystem paths.
 Surrounding warnings and terminal output are local operational notices, not

@@ -14,7 +14,11 @@ import {
 	normalizeConfig,
 	type PiHistoryConfig,
 } from "./config.ts";
-import { formatDiagnostic, type InitializationFailureReason } from "./diagnostics.ts";
+import {
+	formatDiagnostic,
+	type InitializationFailureReason,
+	type StorageDegradationReason,
+} from "./diagnostics.ts";
 import { HistoryEditor } from "./history-editor.ts";
 import {
 	type ClearHistoryResult,
@@ -109,6 +113,7 @@ export type RuntimeStateSnapshot = {
 	store: PiHistoryStore | undefined;
 	lastError: string | undefined;
 	initializationFailureReason: InitializationFailureReason | undefined;
+	storageDegradationReason: StorageDegradationReason | undefined;
 };
 
 type RuntimeState = {
@@ -118,6 +123,7 @@ type RuntimeState = {
 	store: PiHistoryStore | undefined;
 	lastError: string | undefined;
 	initializationFailureReason: InitializationFailureReason | undefined;
+	storageDegradationReason: StorageDegradationReason | undefined;
 	notifiedKeys: Set<string>;
 	editorInstalled: boolean;
 };
@@ -133,6 +139,7 @@ export function installPiHistoryForTest(
 		store: undefined,
 		lastError: undefined,
 		initializationFailureReason: undefined,
+		storageDegradationReason: undefined,
 		notifiedKeys: new Set(),
 		editorInstalled: false,
 	};
@@ -208,6 +215,7 @@ export function installPiHistoryForTest(
 			const result = await store.recordPrompt(event.text);
 			handleRecordResult(ctx, state, result);
 		} catch (error) {
+			state.storageDegradationReason = "record_failed";
 			notify(ctx, `pi-history capture failed: ${errorMessage(error)}`, "warning");
 		}
 		return { action: "continue" };
@@ -225,6 +233,7 @@ export function installPiHistoryForTest(
 			store: state.store,
 			lastError: state.lastError,
 			initializationFailureReason: state.initializationFailureReason,
+			storageDegradationReason: state.storageDegradationReason,
 		}),
 	};
 }
@@ -294,13 +303,17 @@ async function handleCommand(
 		notify(
 			ctx,
 			buildStatusMessage(state, state.store),
-			state.store?.writeBlocked || state.initializationFailureReason ? "warning" : "info",
+			state.store?.writeBlocked ||
+				state.initializationFailureReason ||
+				state.storageDegradationReason
+				? "warning"
+				: "info",
 		);
 		return;
 	}
 	if (command === "clear") {
 		const store = await ensureInitialized(ctx);
-		await handleClearCommand(ctx, state.identity, store);
+		await handleClearCommand(ctx, state, store);
 		return;
 	}
 	notify(ctx, "Usage: /pi-history status|clear", "warning");
@@ -308,7 +321,7 @@ async function handleCommand(
 
 async function handleClearCommand(
 	ctx: PiHistoryContext,
-	identity: ProjectIdentity | undefined,
+	state: RuntimeState,
 	store: PiHistoryStore | undefined,
 ): Promise<void> {
 	if (!canUseUi(ctx)) return;
@@ -316,7 +329,7 @@ async function handleClearCommand(
 		notify(ctx, "pi-history is unavailable; nothing was cleared", "warning");
 		return;
 	}
-	const globalScope = identity?.isolationLevel === IsolationLevel.Global;
+	const globalScope = state.identity?.isolationLevel === IsolationLevel.Global;
 	const confirmed = await ctx.ui.confirm(
 		"Clear pi-history?",
 		globalScope
@@ -327,11 +340,19 @@ async function handleClearCommand(
 		notify(ctx, "pi-history clear cancelled", "info");
 		return;
 	}
-	const result = await store.clear();
+	let result: ClearHistoryResult;
+	try {
+		result = await store.clear();
+	} catch (error) {
+		state.storageDegradationReason = "clear_failed";
+		notify(ctx, `pi-history clear failed: ${errorMessage(error)}`, "warning");
+		return;
+	}
 	if (result.kind === "blocked") {
 		notify(ctx, `pi-history clear blocked: ${result.reason}`, "warning");
 		return;
 	}
+	state.storageDegradationReason = undefined;
 	notify(
 		ctx,
 		globalScope ? "pi-history cleared (global scope)" : "pi-history cleared for current project",
@@ -363,6 +384,10 @@ function handleRecordResult(
 	state: RuntimeState,
 	result: RecordPromptResult,
 ): void {
+	if (result.kind === "recorded") {
+		state.storageDegradationReason = undefined;
+		return;
+	}
 	if (result.kind !== "blocked") return;
 	notifyOnce(
 		ctx,
@@ -410,6 +435,20 @@ function buildStatusMessage(state: RuntimeState, store: PiHistoryStore | undefin
 			initialization: "ready",
 			storage: "write_blocked",
 			storageReason,
+			editor: "ready",
+			cap: state.config.maxEntries,
+			scope:
+				state.identity.isolationLevel === IsolationLevel.Global
+					? IsolationLevel.Global
+					: IsolationLevel.Project,
+		});
+	}
+	if (state.storageDegradationReason) {
+		return formatDiagnostic({
+			state: "storage_degraded",
+			initialization: "ready",
+			storage: "degraded",
+			storageReason: state.storageDegradationReason,
 			editor: "ready",
 			cap: state.config.maxEntries,
 			scope:
