@@ -1,0 +1,61 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+# Least privilege: verify only reads source; the publish job re-declares the
+# id-token scope it needs for npm OIDC trusted publishing.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      # RELEASE.md requires tag and package.json version to match; fail the
+      # release before a mismatched publish can happen.
+      - name: Tag must match package.json version
+        run: |
+          test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+
+      - run: npm run verify
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    # Approval gate: the npm-release environment requires the release owner's
+    # review, so every publish is an explicit human decision.
+    environment: npm-release
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Mints the OIDC token npm exchanges for a short-lived publish credential.
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Node 24 bundles npm >= 11.5.1, the minimum for trusted publishing.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      # Provenance attestation is generated automatically for OIDC publishes
+      # from public repos; --provenance keeps it explicit and fails loudly if
+      # the trusted-publisher match is misconfigured.
+      - run: npm publish --provenance --access public
