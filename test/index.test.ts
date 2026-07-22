@@ -132,7 +132,7 @@ test("healthy global status uses the versioned diagnostic contract", async () =>
 
 	assert.deepEqual(fixture.context.notifications.at(-1), {
 		message:
-			"pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=0; cap=500; scope=global",
+			"pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=0; cap=500; scope=global",
 		type: "info",
 	});
 });
@@ -150,7 +150,7 @@ test("configuration loading failure omits unavailable metadata", async () => {
 
 	assert.deepEqual(fixture.context.notifications.at(-1), {
 		message:
-			"pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=configuration_load_failed; storage=unavailable; editor=ready",
+			"pi-history: diagnosticsVersion=2; state=initialization_failed; initialization=failed; initializationReason=configuration_load_failed; storage=unavailable; editor=ready",
 		type: "warning",
 	});
 	assert.match(notificationText(fixture.context), /config secret at \/private\/config/);
@@ -179,6 +179,28 @@ test("new TUI session retries failed initialization", async () => {
 	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /state=healthy/);
 });
 
+test("new TUI session clears a stale storage degradation from the previous session", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.store.recordError = new Error("transient capture failure");
+	fixture.install();
+	await fixture.emitSessionStart();
+	await fixture.emitInput({ text: "first", source: "interactive" });
+	await fixture.runCommand("status");
+	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /state=storage_degraded/);
+
+	// A new session reloads a healthy store; the prior transient degradation
+	// must not persist into the fresh session's status.
+	fixture.store.recordError = undefined;
+	await fixture.emitSessionStart();
+	await fixture.runCommand("status");
+
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=0; cap=500; scope=project",
+		type: "info",
+	});
+});
+
 test("identity resolution failure reports a safe stage code", async () => {
 	const fixture = createRuntimeFixture();
 	fixture.install({
@@ -192,7 +214,7 @@ test("identity resolution failure reports a safe stage code", async () => {
 
 	assert.deepEqual(fixture.context.notifications.at(-1), {
 		message:
-			"pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=identity_resolution_failed; storage=unavailable; editor=ready; cap=500; scope=project",
+			"pi-history: diagnosticsVersion=2; state=initialization_failed; initialization=failed; initializationReason=identity_resolution_failed; storage=unavailable; editor=ready; cap=500; scope=project",
 		type: "warning",
 	});
 	assert.match(notificationText(fixture.context), /identity secret at \/private\/project/);
@@ -211,7 +233,7 @@ test("storage loading failure reports a safe stage code", async () => {
 
 	assert.deepEqual(fixture.context.notifications.at(-1), {
 		message:
-			"pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=storage_load_failed; storage=unavailable; editor=ready; cap=500; scope=project",
+			"pi-history: diagnosticsVersion=2; state=initialization_failed; initialization=failed; initializationReason=storage_load_failed; storage=unavailable; editor=ready; cap=500; scope=project",
 		type: "warning",
 	});
 	assert.match(notificationText(fixture.context), /storage secret at \/private\/history/);
@@ -314,7 +336,7 @@ test("capture errors notify the user but do not block prompt flow", async () => 
 	assert.match(notificationText(fixture.context), /capture failed: disk full/);
 	assert.deepEqual(fixture.context.notifications.at(-1), {
 		message:
-			"pi-history: diagnosticsVersion=1; state=storage_degraded; initialization=ready; storage=degraded; storageReason=record_failed; editor=ready; cap=500; scope=project",
+			"pi-history: diagnosticsVersion=2; state=storage_degraded; initialization=ready; storage=degraded; storageReason=record_failed; editor=ready; cap=500; scope=project",
 		type: "warning",
 	});
 });
@@ -334,7 +356,7 @@ test("successful capture restores storage readiness", async () => {
 
 	assert.deepEqual(fixture.context.notifications.at(-1), {
 		message:
-			"pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=1; cap=500; scope=project",
+			"pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=1; cap=500; scope=project",
 		type: "info",
 	});
 });
@@ -353,7 +375,7 @@ test("persistent write blocking outranks transient storage degradation", async (
 
 	assert.deepEqual(fixture.context.notifications.at(-1), {
 		message:
-			"pi-history: diagnosticsVersion=1; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=project_root_mismatch; editor=ready; cap=500; scope=project",
+			"pi-history: diagnosticsVersion=2; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=project_root_mismatch; editor=ready; cap=500; scope=project",
 		type: "warning",
 	});
 });
@@ -393,12 +415,16 @@ test("healthy project status omits private data without mutating runtime state",
 	assert.equal(fixture.store.clearCount, 0);
 	assert.deepEqual(fixture.context.notifications.at(-1), {
 		message:
-			"pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=1; cap=42; scope=project",
+			"pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=1; cap=42; scope=project",
 		type: "info",
 	});
 });
 
-for (const storageReason of ["corrupt_history", "project_root_mismatch"] as const) {
+for (const storageReason of [
+	"corrupt_history",
+	"unsupported_schema",
+	"project_root_mismatch",
+] as const) {
 	test(`${storageReason} status omits prompts and filesystem paths`, async () => {
 		const fixture = createRuntimeFixture({ configMaxEntries: 42 });
 		fixture.store.entriesSnapshot = [entry("secret prompt text")];
@@ -409,7 +435,7 @@ for (const storageReason of ["corrupt_history", "project_root_mismatch"] as cons
 		await fixture.runCommand("status");
 
 		assert.deepEqual(fixture.context.notifications.at(-1), {
-			message: `pi-history: diagnosticsVersion=1; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=${storageReason}; editor=ready; cap=42; scope=project`,
+			message: `pi-history: diagnosticsVersion=2; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=${storageReason}; editor=ready; cap=42; scope=project`,
 			type: "warning",
 		});
 	});
@@ -428,6 +454,23 @@ test("clear confirms and clears active in-memory store", async () => {
 	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /cleared/);
 });
 
+test("unsupported schema keeps confirmed clear blocked", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.store.clearBlockReason = "unsupported_schema";
+	fixture.install();
+	await fixture.emitSessionStart();
+	await fixture.emitInput({ text: "alpha", source: "interactive" });
+
+	await fixture.runCommand("clear");
+
+	assert.equal(fixture.store.clearCount, 1);
+	assert.deepEqual(fixture.store.recorded, ["alpha"]);
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message: "pi-history clear blocked: unsupported_schema",
+		type: "warning",
+	});
+});
+
 test("clear errors notify locally and report safe storage degradation", async () => {
 	const fixture = createRuntimeFixture();
 	fixture.store.clearError = new Error("clear secret at /private/history");
@@ -443,7 +486,7 @@ test("clear errors notify locally and report safe storage degradation", async ()
 	);
 	assert.deepEqual(fixture.context.notifications.at(-1), {
 		message:
-			"pi-history: diagnosticsVersion=1; state=storage_degraded; initialization=ready; storage=degraded; storageReason=clear_failed; editor=ready; cap=500; scope=project",
+			"pi-history: diagnosticsVersion=2; state=storage_degraded; initialization=ready; storage=degraded; storageReason=clear_failed; editor=ready; cap=500; scope=project",
 		type: "warning",
 	});
 });
@@ -463,7 +506,7 @@ test("successful clear restores storage readiness", async () => {
 
 	assert.deepEqual(fixture.context.notifications.at(-1), {
 		message:
-			"pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=0; cap=500; scope=project",
+			"pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=0; cap=500; scope=project",
 		type: "info",
 	});
 });
@@ -511,7 +554,7 @@ test("missing editor hooks report unavailable integration with warning severity"
 	);
 	assert.deepEqual(fixture.context.notifications.at(-1), {
 		message:
-			"pi-history: diagnosticsVersion=1; state=editor_degraded; initialization=ready; storage=ready; editor=unavailable; editorReason=missing_editor_hooks; entries=0; cap=500; scope=project",
+			"pi-history: diagnosticsVersion=2; state=editor_degraded; initialization=ready; storage=ready; editor=unavailable; editorReason=missing_editor_hooks; entries=0; cap=500; scope=project",
 		type: "warning",
 	});
 });
@@ -552,7 +595,7 @@ for (const { editorReason, missingMethod, notice } of [
 
 		assert.match(notificationText(fixture.context), new RegExp(notice));
 		assert.deepEqual(fixture.context.notifications.at(-1), {
-			message: `pi-history: diagnosticsVersion=1; state=editor_degraded; initialization=ready; storage=ready; editor=degraded; editorReason=${editorReason}; entries=1; cap=500; scope=project`,
+			message: `pi-history: diagnosticsVersion=2; state=editor_degraded; initialization=ready; storage=ready; editor=degraded; editorReason=${editorReason}; entries=1; cap=500; scope=project`,
 			type: "info",
 		});
 	});
@@ -587,7 +630,7 @@ test("initialization failure outranks and retains unavailable editor detail", as
 	const status = fixture.context.notifications.at(-1);
 	assert.deepEqual(status, {
 		message:
-			"pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=configuration_load_failed; storage=unavailable; editor=unavailable; editorReason=missing_editor_hooks",
+			"pi-history: diagnosticsVersion=2; state=initialization_failed; initialization=failed; initializationReason=configuration_load_failed; storage=unavailable; editor=unavailable; editorReason=missing_editor_hooks",
 		type: "warning",
 	});
 	assert.doesNotMatch(status?.message ?? "", /private failure|\/private/);
@@ -608,7 +651,7 @@ test("write blocking outranks and retains ghost degradation detail", async () =>
 
 	assert.deepEqual(fixture.context.notifications.at(-1), {
 		message:
-			"pi-history: diagnosticsVersion=1; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=project_root_mismatch; editor=degraded; editorReason=missing_cursor; cap=500; scope=project",
+			"pi-history: diagnosticsVersion=2; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=project_root_mismatch; editor=degraded; editorReason=missing_cursor; cap=500; scope=project",
 		type: "warning",
 	});
 });
@@ -628,7 +671,7 @@ test("storage degradation outranks and retains ghost degradation detail", async 
 	const status = fixture.context.notifications.at(-1);
 	assert.deepEqual(status, {
 		message:
-			"pi-history: diagnosticsVersion=1; state=storage_degraded; initialization=ready; storage=degraded; storageReason=record_failed; editor=degraded; editorReason=missing_render_seam; cap=500; scope=project",
+			"pi-history: diagnosticsVersion=2; state=storage_degraded; initialization=ready; storage=degraded; storageReason=record_failed; editor=degraded; editorReason=missing_render_seam; cap=500; scope=project",
 		type: "warning",
 	});
 	assert.doesNotMatch(status?.message ?? "", /private prompt|private failure|\/private/);
@@ -744,6 +787,7 @@ class FakeStore implements PiHistoryStore {
 	blockReason: HistoryBlockReason | undefined;
 	recordError: Error | undefined;
 	clearError: Error | undefined;
+	clearBlockReason: Exclude<HistoryBlockReason, "corrupt_history"> | undefined;
 	clearCount = 0;
 
 	constructor(
@@ -787,6 +831,13 @@ class FakeStore implements PiHistoryStore {
 	async clear(): Promise<ClearHistoryResult> {
 		this.clearCount++;
 		if (this.clearError) throw this.clearError;
+		if (this.clearBlockReason) {
+			return {
+				kind: "blocked",
+				reason: this.clearBlockReason,
+				warnings: [`blocked: ${this.clearBlockReason}`],
+			};
+		}
 		this.recorded = [];
 		this.entriesSnapshot = [];
 		return { kind: "cleared" };

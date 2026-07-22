@@ -7,10 +7,10 @@ see [`README.md`](../README.md); for the diagnostic vocabulary, see
 A healthy `/pi-history status` notification uses a fixed, versioned format:
 
 ```text
-pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=12; cap=2000; scope=project
+pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=12; cap=2000; scope=project
 ```
 
-Version 1 fields always follow this order: `diagnosticsVersion`, `state`,
+Version 2 fields always follow this order: `diagnosticsVersion`, `state`,
 `initialization`, optional `initializationReason`, `storage`, optional
 `storageReason`, `editor`, optional `editorReason`, optional `entries`, optional
 `cap`, then optional `scope`. `entries` appears only for ready storage; `cap` and
@@ -31,6 +31,7 @@ without probing or retrying. Start or reload a TUI session to retry.
 Storage that safely refuses writes uses `state=write_blocked` and one reason:
 
 - `corrupt_history` — clearing can replace the corrupt history with an empty one.
+- `unsupported_schema` — recording and clearing remain blocked to preserve data this release cannot interpret.
 - `project_root_mismatch` — clearing remains blocked to preserve foreign history.
 
 Write-blocked status omits `entries`, prompt contents, project roots, and storage
@@ -66,7 +67,10 @@ each applicable component reason. Initialization failure, write blocking, storag
 degradation, and unavailable editor integration use warning severity;
 healthy and ghost-only degradation use information severity.
 
-Share only a `pi-history:` line containing `diagnosticsVersion=1`. Versioned
+Version 2 adds `unsupported_schema` to the version 1 field vocabulary; field
+order and presence rules remain unchanged.
+
+Share only a `pi-history:` line containing `diagnosticsVersion=2`. Versioned
 diagnostics omit prompt text, raw errors, and exact filesystem paths.
 Surrounding warnings and terminal output are local operational notices, not
 share-safe diagnostics. Diagnostics remain local and are neither persisted nor

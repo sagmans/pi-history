@@ -3,6 +3,7 @@ import { hostname } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import type { BlockReason } from "./block-reason.ts";
 import { hasErrorCode, isPositiveInteger, isRecord } from "./guards.ts";
 import {
 	PRIVATE_DIR_MODE,
@@ -40,7 +41,11 @@ export type HistoryLockOwner = {
 	createdAt: string;
 };
 
-export type HistoryBlockReason = "corrupt_history" | "project_root_mismatch";
+// Re-exported under the storage-facing name so callers depend on storage
+// vocabulary while the canonical union lives in one place.
+export type HistoryBlockReason = BlockReason;
+
+type ClearHistoryBlockReason = Exclude<HistoryBlockReason, "corrupt_history">;
 
 export type LoadHistoryResult =
 	| {
@@ -62,7 +67,7 @@ export type RecordPromptResult =
 
 export type ClearHistoryResult =
 	| { kind: "cleared" }
-	| { kind: "blocked"; reason: "project_root_mismatch"; warnings: string[] };
+	| { kind: "blocked"; reason: ClearHistoryBlockReason; warnings: string[] };
 
 export type Clock = () => string;
 
@@ -112,6 +117,9 @@ export class HistoryStore {
 
 	async recordPrompt(text: string): Promise<RecordPromptResult> {
 		if (text.trim().length === 0) return { kind: "skipped", reason: "empty" };
+		// A session blocked at load time returns from memory instead of re-reading
+		// under the lock on every input: the file is unlikely to self-heal
+		// mid-session, and the next session start restores freshness.
 		if (this.blockReason) {
 			return {
 				kind: "blocked",
@@ -157,15 +165,27 @@ export class HistoryStore {
 	}
 
 	async clear(): Promise<ClearHistoryResult> {
-		if (this.blockReason === "project_root_mismatch") {
-			return {
-				kind: "blocked",
-				reason: "project_root_mismatch",
-				warnings: this.blockWarnings,
-			};
-		}
+		// Same stale-safe short-circuit as recordPrompt: a blocked clear returns
+		// from memory; the under-lock revalidation below catches a file that
+		// became blocked after this session loaded ready.
+		const existingBlock = clearBlockResult(this.blockReason, this.blockWarnings);
+		if (existingBlock) return existingBlock;
+
 		return withHistoryFileLock(this.identity.historyFilePath, async () => {
 			const timestamp = this.now();
+			// Validate under the replacement lock so another version cannot race in a new schema.
+			const latest = await loadHistoryFile({
+				identity: this.identity,
+				now: () => timestamp,
+			});
+			if (latest.kind === "blocked") {
+				const latestBlock = clearBlockResult(latest.reason, latest.warnings);
+				if (latestBlock) {
+					this.applyBlocked(latest);
+					return latestBlock;
+				}
+			}
+
 			this.history = {
 				...createEmptyHistory(this.identity.projectRoot, timestamp),
 				clearedAt: timestamp,
@@ -219,18 +239,32 @@ export async function loadHistoryFile(input: {
 	}
 
 	const parsed = parseHistoryText(text);
-	if (!parsed) {
-		return blockedHistory({
-			identity: input.identity,
-			now: now(),
-			reason: "corrupt_history",
-			warning: "history file is corrupt; writes blocked",
-		});
+	switch (parsed.kind) {
+		case "unsupported_schema":
+			return blockedHistory({
+				identity: input.identity,
+				now: now(),
+				reason: "unsupported_schema",
+				warning: "history schema is unsupported; mutations blocked",
+			});
+		case "corrupt":
+			return blockedHistory({
+				identity: input.identity,
+				now: now(),
+				reason: "corrupt_history",
+				warning: "history file is corrupt; writes blocked",
+			});
+		case "ready":
+			break;
+		default: {
+			const exhaustive: never = parsed;
+			return exhaustive;
+		}
 	}
 
 	const validation = validateStoredProjectRoot({
 		identity: input.identity,
-		storedProjectRoot: parsed.projectRoot,
+		storedProjectRoot: parsed.history.projectRoot,
 	});
 	if (validation.kind === "mismatch") {
 		return blockedHistory({
@@ -241,7 +275,7 @@ export async function loadHistoryFile(input: {
 		});
 	}
 
-	return { kind: "ready", history: parsed, warnings: [] };
+	return { kind: "ready", history: parsed.history, warnings: [] };
 }
 
 export function createEmptyHistory(projectRoot: string, now: string): PromptHistoryFile {
@@ -301,8 +335,12 @@ function mergeHistories(input: {
 			byText.set(entry.text, mergeEntry(byText.get(entry.text), entry));
 		}
 	}
+	// Relational comparison keeps timestamp ordering locale-independent and
+	// consistent with earlierTimestamp/laterTimestamp; newest updatedAt first.
 	const entries = [...byText.values()]
-		.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+		.sort((left, right) =>
+			left.updatedAt > right.updatedAt ? -1 : left.updatedAt < right.updatedAt ? 1 : 0,
+		)
 		.slice(0, input.maxEntries);
 	return withOptionalClearMarker(
 		{
@@ -335,12 +373,28 @@ function mergeEntry(existing: HistoryEntry | undefined, next: HistoryEntry): His
 	};
 }
 
-function parseHistoryText(text: string): PromptHistoryFile | undefined {
+type ParsedHistoryText =
+	| Readonly<{ kind: "ready"; history: PromptHistoryFile }>
+	| Readonly<{ kind: "corrupt" }>
+	| Readonly<{ kind: "unsupported_schema" }>;
+
+function parseHistoryText(text: string): ParsedHistoryText {
+	let raw: unknown;
 	try {
-		return normalizeHistoryFile(JSON.parse(text));
+		raw = JSON.parse(text);
 	} catch {
-		return undefined;
+		return { kind: "corrupt" };
 	}
+	// Unknown positive versions may be valid to newer code, so preserve them before validation.
+	if (
+		isRecord(raw) &&
+		isPositiveInteger(raw.schemaVersion) &&
+		raw.schemaVersion !== HISTORY_SCHEMA_VERSION
+	) {
+		return { kind: "unsupported_schema" };
+	}
+	const history = normalizeHistoryFile(raw);
+	return history ? { kind: "ready", history } : { kind: "corrupt" };
 }
 
 function normalizeHistoryFile(raw: unknown): PromptHistoryFile | undefined {
@@ -521,6 +575,14 @@ function lockOwnerIsActive(owner: HistoryLockOwner): boolean {
 	} catch {
 		return false;
 	}
+}
+
+function clearBlockResult(
+	reason: HistoryBlockReason | undefined,
+	warnings: string[],
+): Extract<ClearHistoryResult, { kind: "blocked" }> | undefined {
+	if (!reason || reason === "corrupt_history") return undefined;
+	return { kind: "blocked", reason, warnings };
 }
 
 function blockedHistory(input: {

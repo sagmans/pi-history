@@ -8,7 +8,11 @@ readonly PANE_RATIO="0.5"
 readonly CAPTURE_LINES="200"
 readonly PRIVATE_DIR_MODE="700"
 readonly PRIVATE_FILE_MODE="600"
-readonly DIAGNOSTICS_VERSION="1"
+# Must match src/diagnostics.ts DIAGNOSTICS_VERSION and src/history-store.ts
+# HISTORY_SCHEMA_VERSION; the hardcoded values double as a cross-check against
+# the real extension output below, so a bump that forgets this script fails the
+# smoke rather than passing silently.
+readonly DIAGNOSTICS_VERSION="2"
 readonly HISTORY_SCHEMA_VERSION="1"
 readonly SMOKE_MAX_ENTRIES="42"
 readonly SMOKE_ENTRY_COUNT="1"

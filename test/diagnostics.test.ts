@@ -22,7 +22,7 @@ for (const scope of ["project", "global"] as const) {
 	test(`healthy ${scope} diagnostic uses fixed fields and order`, () => {
 		assert.equal(
 			formatDiagnostic({ ...HEALTHY_BASE, scope }),
-			`pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=12; cap=2000; scope=${scope}`,
+			`pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=12; cap=2000; scope=${scope}`,
 		);
 	});
 }
@@ -45,7 +45,7 @@ const INITIALIZATION_FAILURE_CASES: ReadonlyArray<{
 			editor: "ready",
 		},
 		expected:
-			"pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=configuration_load_failed; storage=unavailable; editor=ready",
+			"pi-history: diagnosticsVersion=2; state=initialization_failed; initialization=failed; initializationReason=configuration_load_failed; storage=unavailable; editor=ready",
 	},
 	...(["identity_resolution_failed", "storage_load_failed"] as const).map(
 		(initializationReason) => ({
@@ -58,7 +58,7 @@ const INITIALIZATION_FAILURE_CASES: ReadonlyArray<{
 				cap: 2000,
 				scope: "project" as const,
 			},
-			expected: `pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=${initializationReason}; storage=unavailable; editor=ready; cap=2000; scope=project`,
+			expected: `pi-history: diagnosticsVersion=2; state=initialization_failed; initialization=failed; initializationReason=${initializationReason}; storage=unavailable; editor=ready; cap=2000; scope=project`,
 		}),
 	),
 ];
@@ -69,7 +69,11 @@ for (const { snapshot, expected } of INITIALIZATION_FAILURE_CASES) {
 	});
 }
 
-for (const storageReason of ["corrupt_history", "project_root_mismatch"] as const) {
+for (const storageReason of [
+	"corrupt_history",
+	"unsupported_schema",
+	"project_root_mismatch",
+] as const) {
 	test(`${storageReason} diagnostic reports safe write blocking`, () => {
 		const snapshot: DiagnosticSnapshot = {
 			state: "write_blocked",
@@ -82,7 +86,7 @@ for (const storageReason of ["corrupt_history", "project_root_mismatch"] as cons
 		};
 		assert.equal(
 			formatDiagnostic(snapshot),
-			`pi-history: diagnosticsVersion=1; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=${storageReason}; editor=ready; cap=2000; scope=project`,
+			`pi-history: diagnosticsVersion=2; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=${storageReason}; editor=ready; cap=2000; scope=project`,
 		);
 	});
 }
@@ -100,7 +104,7 @@ for (const storageReason of ["record_failed", "clear_failed"] as const) {
 		};
 		assert.equal(
 			formatDiagnostic(snapshot),
-			`pi-history: diagnosticsVersion=1; state=storage_degraded; initialization=ready; storage=degraded; storageReason=${storageReason}; editor=ready; cap=2000; scope=project`,
+			`pi-history: diagnosticsVersion=2; state=storage_degraded; initialization=ready; storage=degraded; storageReason=${storageReason}; editor=ready; cap=2000; scope=project`,
 		);
 	});
 }
@@ -118,7 +122,7 @@ test("missing editor hooks report unavailable integration", () => {
 	};
 	assert.equal(
 		formatDiagnostic(snapshot),
-		"pi-history: diagnosticsVersion=1; state=editor_degraded; initialization=ready; storage=ready; editor=unavailable; editorReason=missing_editor_hooks; entries=12; cap=2000; scope=project",
+		"pi-history: diagnosticsVersion=2; state=editor_degraded; initialization=ready; storage=ready; editor=unavailable; editorReason=missing_editor_hooks; entries=12; cap=2000; scope=project",
 	);
 });
 
@@ -141,7 +145,7 @@ for (const editorReason of [
 		};
 		assert.equal(
 			formatDiagnostic(snapshot),
-			`pi-history: diagnosticsVersion=1; state=editor_degraded; initialization=ready; storage=ready; editor=degraded; editorReason=${editorReason}; entries=12; cap=2000; scope=project`,
+			`pi-history: diagnosticsVersion=2; state=editor_degraded; initialization=ready; storage=ready; editor=degraded; editorReason=${editorReason}; entries=12; cap=2000; scope=project`,
 		);
 	});
 }
@@ -157,7 +161,7 @@ const COMBINED_CASES: ReadonlyArray<{ snapshot: DiagnosticSnapshot; expected: st
 			editorReason: "missing_editor_hooks",
 		},
 		expected:
-			"pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=configuration_load_failed; storage=unavailable; editor=unavailable; editorReason=missing_editor_hooks",
+			"pi-history: diagnosticsVersion=2; state=initialization_failed; initialization=failed; initializationReason=configuration_load_failed; storage=unavailable; editor=unavailable; editorReason=missing_editor_hooks",
 	},
 	{
 		snapshot: {
@@ -171,7 +175,7 @@ const COMBINED_CASES: ReadonlyArray<{ snapshot: DiagnosticSnapshot; expected: st
 			scope: "project",
 		},
 		expected:
-			"pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=storage_load_failed; storage=unavailable; editor=degraded; editorReason=missing_lines; cap=2000; scope=project",
+			"pi-history: diagnosticsVersion=2; state=initialization_failed; initialization=failed; initializationReason=storage_load_failed; storage=unavailable; editor=degraded; editorReason=missing_lines; cap=2000; scope=project",
 	},
 	{
 		snapshot: {
@@ -185,7 +189,7 @@ const COMBINED_CASES: ReadonlyArray<{ snapshot: DiagnosticSnapshot; expected: st
 			scope: "project",
 		},
 		expected:
-			"pi-history: diagnosticsVersion=1; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=project_root_mismatch; editor=degraded; editorReason=missing_cursor; cap=2000; scope=project",
+			"pi-history: diagnosticsVersion=2; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=project_root_mismatch; editor=degraded; editorReason=missing_cursor; cap=2000; scope=project",
 	},
 	{
 		snapshot: {
@@ -199,7 +203,7 @@ const COMBINED_CASES: ReadonlyArray<{ snapshot: DiagnosticSnapshot; expected: st
 			scope: "global",
 		},
 		expected:
-			"pi-history: diagnosticsVersion=1; state=storage_degraded; initialization=ready; storage=degraded; storageReason=clear_failed; editor=unavailable; editorReason=missing_editor_hooks; cap=2000; scope=global",
+			"pi-history: diagnosticsVersion=2; state=storage_degraded; initialization=ready; storage=degraded; storageReason=clear_failed; editor=unavailable; editorReason=missing_editor_hooks; cap=2000; scope=global",
 	},
 ];
 
