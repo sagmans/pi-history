@@ -38,5 +38,5 @@ jobs:
 
       # The named full gate keeps maintainer guidance and CI aligned. Its audit
       # fails only at high severity, leaving the known moderate transitive
-      # advisory documented in CONTRIBUTING.md for reassessment on each pi bump.
+      # advisory documented in docs/maintainer-development.md for reassessment on each pi bump.
       - run: npm run verify:ci
