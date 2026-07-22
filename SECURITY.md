@@ -25,6 +25,23 @@ You can expect an acknowledgement within 7 days. Fixes are released as patch
 versions; reporters are credited in release notes unless they prefer
 anonymity.
 
+## Exposed secrets
+
+GitHub secret scanning covers the repository's full Git history and pull
+requests. Push protection blocks supported secrets before they enter the
+repository.
+
+Report a discovered secret through the private vulnerability reporting link
+above, not a public issue. Revoke or rotate the credential immediately; deleting
+it from the latest revision does not remove it from Git history. Include the
+secret type and affected commit and path, but redact the credential value.
+
+Treat a push-protection alert as real unless verified otherwise. A maintainer may
+bypass a false positive only with a recorded rationale. Any future allowlist
+entry must match the narrowest practical pattern and document why the matched
+value cannot authenticate; blanket file or directory exclusions are not
+permitted.
+
 ## Supported versions
 
 Only the latest release tag receives security fixes. There is no long-term
