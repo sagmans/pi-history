@@ -2,12 +2,9 @@
 
 Ghost completion for prompt history across [pi](https://github.com/earendil-works/pi-coding-agent) sessions.
 
-`pi-history` records your real prompts and keeps the data local. Each project
-gets its own history by default (`project` isolation, keyed on the shared git
-common directory so all linked worktrees recall one history; non-git
-directories fall back to the current directory). Opt into one host-wide history
-(`global`) for cross-project recall. History lives only under
-`~/.pi/agent/pi-history/` with private file permissions.
+`pi-history` records your real prompts. Two isolation levels — `project`
+(default: one history per project) and `global` (one host-wide history) —
+configured under `~/.pi/agent/pi-history/`.
 
 ## Features
 
@@ -37,32 +34,21 @@ Install from npm so pi only offers updates after a published release.
 
 ## Configuration
 
-Shipped default keeps one history per project:
-
 ```json
 { "maxEntries": 2000, "isolationLevel": "project" }
 ```
 
-For one host-wide history, create `~/.pi/agent/pi-history/config.json` (see
-`config.local.example.json` for the shape) and set `"isolationLevel": "global"`.
-User config lives in the data directory, not the installed package, so it
-survives `pi update`. Precedence (lowest → highest): built-in defaults → shipped
-`config.json` → `~/.pi/agent/pi-history/config.json` → `config.local.json`. The
-highest file that mentions an option wins; an invalid value falls back to the
-default with a warning.
+User config lives in the data directory (`~/.pi/agent/pi-history/`), not the
+installed package, so it survives `pi update`. Precedence (lowest → highest):
+built-in defaults → shipped `config.json` → `config.json` → `config.local.json`.
+The highest file that mentions an option wins; an invalid value falls back to
+the default with a warning.
 
 ## Diagnostics
 
 `/pi-history status` prints one versioned, privacy-safe line, e.g.
 `pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=12; cap=2000; scope=project`.
 Full field reference: [`docs/diagnostics.md`](https://github.com/sagmans/pi-history/blob/main/docs/diagnostics.md).
-
-## Privacy
-
-All history stays on your machine under `~/.pi/agent/pi-history/`; nothing is
-transmitted. Files use private permissions; runtime work is TUI-only. Global
-isolation is opt-in because it puts every project's prompts in one shared file.
-See [`SECURITY.md`](https://github.com/sagmans/pi-history/blob/main/SECURITY.md).
 
 ## Documentation
 
