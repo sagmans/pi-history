@@ -40,7 +40,9 @@ export type HistoryLockOwner = {
 	createdAt: string;
 };
 
-export type HistoryBlockReason = "corrupt_history" | "project_root_mismatch";
+export type HistoryBlockReason = "corrupt_history" | "unsupported_schema" | "project_root_mismatch";
+
+type ClearHistoryBlockReason = Exclude<HistoryBlockReason, "corrupt_history">;
 
 export type LoadHistoryResult =
 	| {
@@ -62,7 +64,7 @@ export type RecordPromptResult =
 
 export type ClearHistoryResult =
 	| { kind: "cleared" }
-	| { kind: "blocked"; reason: "project_root_mismatch"; warnings: string[] };
+	| { kind: "blocked"; reason: ClearHistoryBlockReason; warnings: string[] };
 
 export type Clock = () => string;
 
@@ -157,15 +159,24 @@ export class HistoryStore {
 	}
 
 	async clear(): Promise<ClearHistoryResult> {
-		if (this.blockReason === "project_root_mismatch") {
-			return {
-				kind: "blocked",
-				reason: "project_root_mismatch",
-				warnings: this.blockWarnings,
-			};
-		}
+		const existingBlock = blockClear(this.blockReason, this.blockWarnings);
+		if (existingBlock) return existingBlock;
+
 		return withHistoryFileLock(this.identity.historyFilePath, async () => {
 			const timestamp = this.now();
+			// Validate under the replacement lock so another version cannot race in a new schema.
+			const latest = await loadHistoryFile({
+				identity: this.identity,
+				now: () => timestamp,
+			});
+			if (latest.kind === "blocked") {
+				const latestBlock = blockClear(latest.reason, latest.warnings);
+				if (latestBlock) {
+					this.applyBlocked(latest);
+					return latestBlock;
+				}
+			}
+
 			this.history = {
 				...createEmptyHistory(this.identity.projectRoot, timestamp),
 				clearedAt: timestamp,
@@ -219,7 +230,15 @@ export async function loadHistoryFile(input: {
 	}
 
 	const parsed = parseHistoryText(text);
-	if (!parsed) {
+	if (parsed.kind === "unsupported_schema") {
+		return blockedHistory({
+			identity: input.identity,
+			now: now(),
+			reason: "unsupported_schema",
+			warning: "history schema is unsupported; mutations blocked",
+		});
+	}
+	if (parsed.kind === "corrupt") {
 		return blockedHistory({
 			identity: input.identity,
 			now: now(),
@@ -230,7 +249,7 @@ export async function loadHistoryFile(input: {
 
 	const validation = validateStoredProjectRoot({
 		identity: input.identity,
-		storedProjectRoot: parsed.projectRoot,
+		storedProjectRoot: parsed.history.projectRoot,
 	});
 	if (validation.kind === "mismatch") {
 		return blockedHistory({
@@ -241,7 +260,7 @@ export async function loadHistoryFile(input: {
 		});
 	}
 
-	return { kind: "ready", history: parsed, warnings: [] };
+	return { kind: "ready", history: parsed.history, warnings: [] };
 }
 
 export function createEmptyHistory(projectRoot: string, now: string): PromptHistoryFile {
@@ -335,12 +354,28 @@ function mergeEntry(existing: HistoryEntry | undefined, next: HistoryEntry): His
 	};
 }
 
-function parseHistoryText(text: string): PromptHistoryFile | undefined {
+type ParsedHistoryText =
+	| { kind: "ready"; history: PromptHistoryFile }
+	| { kind: "corrupt" }
+	| { kind: "unsupported_schema" };
+
+function parseHistoryText(text: string): ParsedHistoryText {
+	let raw: unknown;
 	try {
-		return normalizeHistoryFile(JSON.parse(text));
+		raw = JSON.parse(text);
 	} catch {
-		return undefined;
+		return { kind: "corrupt" };
 	}
+	// Unknown positive versions may be valid to newer code, so preserve them before validation.
+	if (
+		isRecord(raw) &&
+		isPositiveInteger(raw.schemaVersion) &&
+		raw.schemaVersion !== HISTORY_SCHEMA_VERSION
+	) {
+		return { kind: "unsupported_schema" };
+	}
+	const history = normalizeHistoryFile(raw);
+	return history ? { kind: "ready", history } : { kind: "corrupt" };
 }
 
 function normalizeHistoryFile(raw: unknown): PromptHistoryFile | undefined {
@@ -521,6 +556,14 @@ function lockOwnerIsActive(owner: HistoryLockOwner): boolean {
 	} catch {
 		return false;
 	}
+}
+
+function blockClear(
+	reason: HistoryBlockReason | undefined,
+	warnings: string[],
+): Extract<ClearHistoryResult, { kind: "blocked" }> | undefined {
+	if (!reason || reason === "corrupt_history") return undefined;
+	return { kind: "blocked", reason, warnings };
 }
 
 function blockedHistory(input: {

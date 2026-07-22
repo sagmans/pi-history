@@ -36,7 +36,7 @@ The script:
 5. Extracts the exact diagnostic line and verifies this contract:
 
 ```text
-pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=1; cap=42; scope=global
+pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=1; cap=42; scope=global
 ```
 
 6. Verifies the extracted line omits the canary, repository path, history path,

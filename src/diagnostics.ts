@@ -1,11 +1,11 @@
 /** Stable status contract kept separate from operational notices and storage data. */
-export const DIAGNOSTICS_VERSION = 1;
+export const DIAGNOSTICS_VERSION = 2;
 
 const DIAGNOSTIC_PREFIX = "pi-history: ";
 const FIELD_SEPARATOR = "; ";
 
 export type DiagnosticScope = "project" | "global";
-export type StorageBlockReason = "corrupt_history" | "project_root_mismatch";
+export type StorageBlockReason = "corrupt_history" | "unsupported_schema" | "project_root_mismatch";
 export type StorageDegradationReason = "record_failed" | "clear_failed";
 export type GhostDegradationReason =
 	| "missing_lines"

@@ -20,6 +20,16 @@ import {
 } from "../src/history-store.ts";
 import { createGlobalIdentity, createProjectIdentity, GLOBAL_SCOPE_KEY } from "../src/project.ts";
 
+const FIXTURE_TIMESTAMP = "2026-07-01T00:00:00.000Z";
+const UNSUPPORTED_SCHEMA_VERSION = HISTORY_SCHEMA_VERSION + 1;
+const INVALID_SCHEMA_VERSIONS: ReadonlyArray<{ label: string; value?: unknown }> = [
+	{ label: "missing" },
+	{ label: "string", value: String(UNSUPPORTED_SCHEMA_VERSION) },
+	{ label: "zero", value: 0 },
+	{ label: "negative", value: -1 },
+	{ label: "fractional", value: 1.5 },
+];
+
 test("missing store loads empty and creates no file until first save", async () => {
 	await withStoreFixture(async ({ storePath, loadStore }) => {
 		const store = await loadStore();
@@ -164,6 +174,96 @@ test("corrupt JSON returns write-blocked state and preserves file", async () => 
 		assert.equal((await loadStore()).writeBlocked, false);
 	});
 });
+
+test("unsupported schema blocks mutations and preserves original bytes", async () => {
+	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
+		const original = serializeHistory({
+			schemaVersion: UNSUPPORTED_SCHEMA_VERSION,
+			projectRoot,
+			createdAt: FIXTURE_TIMESTAMP,
+			updatedAt: FIXTURE_TIMESTAMP,
+			entries: [
+				{
+					text: "synthetic future prompt",
+					createdAt: FIXTURE_TIMESTAMP,
+					updatedAt: FIXTURE_TIMESTAMP,
+					useCount: 1,
+				},
+			],
+		});
+		mkdirSync(path.dirname(storePath), { recursive: true });
+		writeFileSync(storePath, original, "utf8");
+
+		const store = await loadStore();
+		assert.equal(store.writeBlockedReason, "unsupported_schema");
+
+		const recordResult = await store.recordPrompt("new synthetic prompt");
+		const clearResult = await store.clear();
+
+		assert.equal(recordResult.kind, "blocked");
+		if (recordResult.kind === "blocked") {
+			assert.equal(recordResult.reason, "unsupported_schema");
+		}
+		assert.equal(clearResult.kind, "blocked");
+		if (clearResult.kind === "blocked") {
+			assert.equal(clearResult.reason, "unsupported_schema");
+		}
+		assert.equal(store.writeBlockedReason, "unsupported_schema");
+		assert.equal(readFileSync(storePath, "utf8"), original);
+	});
+});
+
+test("clear revalidates a newly unsupported schema before replacement", async () => {
+	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
+		const store = await loadStore();
+		const replacement = serializeHistory({
+			schemaVersion: UNSUPPORTED_SCHEMA_VERSION,
+			projectRoot,
+			createdAt: FIXTURE_TIMESTAMP,
+			updatedAt: FIXTURE_TIMESTAMP,
+			entries: [],
+		});
+		mkdirSync(path.dirname(storePath), { recursive: true });
+		writeFileSync(storePath, replacement, "utf8");
+
+		const clearResult = await store.clear();
+
+		assert.equal(clearResult.kind, "blocked");
+		if (clearResult.kind === "blocked") {
+			assert.equal(clearResult.reason, "unsupported_schema");
+		}
+		assert.equal(store.writeBlockedReason, "unsupported_schema");
+		assert.equal(readFileSync(storePath, "utf8"), replacement);
+	});
+});
+
+for (const invalidSchema of INVALID_SCHEMA_VERSIONS) {
+	test(`${invalidSchema.label} schema version remains recoverable corruption`, async () => {
+		await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
+			const raw: Record<string, unknown> = {
+				projectRoot,
+				createdAt: FIXTURE_TIMESTAMP,
+				updatedAt: FIXTURE_TIMESTAMP,
+				entries: [],
+			};
+			if (invalidSchema.value !== undefined) raw.schemaVersion = invalidSchema.value;
+			mkdirSync(path.dirname(storePath), { recursive: true });
+			writeFileSync(storePath, serializeHistory(raw), "utf8");
+
+			const store = await loadStore();
+			assert.equal(store.writeBlockedReason, "corrupt_history");
+
+			const clearResult = await store.clear();
+
+			assert.equal(store.writeBlocked, false);
+			assert.deepEqual(clearResult, { kind: "cleared" });
+			assert.equal(
+				JSON.parse(readFileSync(storePath, "utf8")).schemaVersion,
+				HISTORY_SCHEMA_VERSION,
+			);
+		});
+	});
+}
 
 test("project mismatch blocks writes instead of merging histories", async () => {
 	await withStoreFixture(async ({ storePath, loadStore }) => {
@@ -331,6 +431,10 @@ async function withStoreFixture(testBody: (fixture: Fixture) => Promise<void>): 
 	} finally {
 		rmSync(root, { force: true, recursive: true });
 	}
+}
+
+function serializeHistory(history: unknown): string {
+	return `${JSON.stringify(history, null, 2)}\n`;
 }
 
 function makeClock(values: string[]): Clock {

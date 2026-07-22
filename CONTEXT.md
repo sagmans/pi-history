@@ -45,8 +45,12 @@ The top-level diagnostic category for a write-blocked condition.
 _Avoid_: Storage-degraded state
 
 **Write-blocked condition**:
-A loaded storage condition that permits safe inspection but rejects mutation because stored history is corrupt or belongs to another project scope.
+A loaded storage condition that permits safe inspection but rejects prompt recording because stored history is corrupt, uses an unsupported schema, or belongs to another project scope. Clear recovery remains condition-specific.
 _Avoid_: Initialization failure, storage degradation
+
+**Unsupported-schema condition**:
+A write-blocked condition where stored history declares a positive integer schema version this release cannot interpret. Recording and clearing remain blocked until a compatible migration path or release is available.
+_Avoid_: Corrupt history, storage degradation
 
 **Storage-degraded condition**:
 A loaded storage condition where the latest record or clear mutation failed unexpectedly, without establishing a persistent safety block.

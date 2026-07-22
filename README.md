@@ -47,7 +47,7 @@ the default with a warning.
 ## Diagnostics
 
 `/pi-history status` prints one versioned, privacy-safe line, e.g.
-`pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=12; cap=2000; scope=project`.
+`pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=12; cap=2000; scope=project`.
 Full field reference: [`docs/diagnostics.md`](https://github.com/sagmans/pi-history/blob/main/docs/diagnostics.md).
 
 ## Documentation
