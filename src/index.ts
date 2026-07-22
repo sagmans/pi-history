@@ -15,6 +15,9 @@ import {
 	type PiHistoryConfig,
 } from "./config.ts";
 import {
+	createDiagnosticSnapshot,
+	type DiagnosticSnapshot,
+	diagnosticSeverity,
 	type EditorDiagnosticState,
 	formatDiagnostic,
 	type GhostDegradationReason,
@@ -317,16 +320,8 @@ async function handleCommand(
 	if (!isTui(ctx)) return;
 	const command = args.trim() || "status";
 	if (command === "status") {
-		notify(
-			ctx,
-			buildStatusMessage(state, state.store),
-			state.store?.writeBlocked ||
-				state.initializationFailureReason ||
-				state.storageDegradationReason ||
-				state.editor.editor === "unavailable"
-				? "warning"
-				: "info",
-		);
+		const status = buildStatus(state, state.store);
+		notify(ctx, status.message, status.type);
 		return;
 	}
 	if (command === "clear") {
@@ -416,23 +411,34 @@ function handleRecordResult(
 	);
 }
 
-function buildStatusMessage(state: RuntimeState, store: PiHistoryStore | undefined): string {
+function buildStatus(
+	state: RuntimeState,
+	store: PiHistoryStore | undefined,
+): { message: string; type: "info" | "warning" } {
+	const snapshot = buildDiagnosticSnapshot(state, store);
+	return snapshot
+		? { message: formatDiagnostic(snapshot), type: diagnosticSeverity(snapshot) }
+		: { message: "pi-history is not initialized", type: "info" };
+}
+
+function buildDiagnosticSnapshot(
+	state: RuntimeState,
+	store: PiHistoryStore | undefined,
+): DiagnosticSnapshot | undefined {
 	if (state.initializationFailureReason === "configuration_load_failed") {
-		return formatDiagnostic({
-			state: "initialization_failed",
+		return createDiagnosticSnapshot({
 			initialization: "failed",
 			initializationReason: state.initializationFailureReason,
 			storage: "unavailable",
-			editor: "ready",
+			...state.editor,
 		});
 	}
 	if (state.initializationFailureReason && state.config) {
-		return formatDiagnostic({
-			state: "initialization_failed",
+		return createDiagnosticSnapshot({
 			initialization: "failed",
 			initializationReason: state.initializationFailureReason,
 			storage: "unavailable",
-			editor: "ready",
+			...state.editor,
 			cap: state.config.maxEntries,
 			scope:
 				state.config.isolationLevel === IsolationLevel.Global
@@ -440,61 +446,36 @@ function buildStatusMessage(state: RuntimeState, store: PiHistoryStore | undefin
 					: IsolationLevel.Project,
 		});
 	}
-	if (!store || !state.identity || !state.config) {
-		return state.lastError
-			? `pi-history unavailable: ${state.lastError}`
-			: "pi-history is not initialized";
-	}
-	if (store.writeBlocked) {
-		// HistoryStore guarantees a bounded reason whenever writeBlocked is true.
-		const storageReason = store.writeBlockedReason as HistoryBlockReason;
-		return formatDiagnostic({
-			state: "write_blocked",
-			initialization: "ready",
-			storage: "write_blocked",
-			storageReason,
-			editor: "ready",
-			cap: state.config.maxEntries,
-			scope:
-				state.identity.isolationLevel === IsolationLevel.Global
-					? IsolationLevel.Global
-					: IsolationLevel.Project,
-		});
-	}
-	if (state.storageDegradationReason) {
-		return formatDiagnostic({
-			state: "storage_degraded",
-			initialization: "ready",
-			storage: "degraded",
-			storageReason: state.storageDegradationReason,
-			editor: "ready",
-			cap: state.config.maxEntries,
-			scope:
-				state.identity.isolationLevel === IsolationLevel.Global
-					? IsolationLevel.Global
-					: IsolationLevel.Project,
-		});
-	}
+	if (!store || !state.identity || !state.config) return undefined;
 	const scope =
 		state.identity.isolationLevel === IsolationLevel.Global
 			? IsolationLevel.Global
 			: IsolationLevel.Project;
-	if (state.editor.editor !== "ready") {
-		return formatDiagnostic({
-			state: "editor_degraded",
+	if (store.writeBlocked) {
+		// HistoryStore guarantees a bounded reason whenever writeBlocked is true.
+		return createDiagnosticSnapshot({
 			initialization: "ready",
-			storage: "ready",
+			storage: "write_blocked",
+			storageReason: store.writeBlockedReason as HistoryBlockReason,
 			...state.editor,
-			entries: store.entryCount,
 			cap: state.config.maxEntries,
 			scope,
 		});
 	}
-	return formatDiagnostic({
-		state: "healthy",
+	if (state.storageDegradationReason) {
+		return createDiagnosticSnapshot({
+			initialization: "ready",
+			storage: "degraded",
+			storageReason: state.storageDegradationReason,
+			...state.editor,
+			cap: state.config.maxEntries,
+			scope,
+		});
+	}
+	return createDiagnosticSnapshot({
 		initialization: "ready",
 		storage: "ready",
-		editor: "ready",
+		...state.editor,
 		entries: store.entryCount,
 		cap: state.config.maxEntries,
 		scope,

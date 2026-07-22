@@ -85,6 +85,13 @@ A healthy `/pi-history status` notification uses a fixed, versioned format:
 pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=12; cap=2000; scope=project
 ```
 
+Version 1 fields always follow this order: `diagnosticsVersion`, `state`,
+`initialization`, optional `initializationReason`, `storage`, optional
+`storageReason`, `editor`, optional `editorReason`, optional `entries`, optional
+`cap`, then optional `scope`. `entries` appears only for ready storage; `cap` and
+`scope=project|global` appear only after configuration loads. Unavailable values
+are omitted instead of replaced with sentinels.
+
 Initialization failures use `state=initialization_failed`,
 `storage=unavailable`, and one bounded reason:
 
@@ -128,10 +135,18 @@ Priority follows that list when multiple capabilities are missing. Editor
 readiness means no degradation has been observed; status does not probe the
 editor.
 
+Top-level state precedence is `initialization_failed`, `write_blocked`,
+`storage_degraded`, `editor_degraded`, then `healthy`. Combined conditions keep
+each applicable component reason. Initialization failure, write blocking,
+storage degradation, and unavailable editor integration use warning severity;
+healthy and ghost-only degradation use information severity.
+
 Share only a `pi-history:` line containing `diagnosticsVersion=1`. Versioned
 diagnostics omit prompt text, raw errors, and exact filesystem paths.
 Surrounding warnings and terminal output are local operational notices, not
-share-safe diagnostics.
+share-safe diagnostics. Diagnostics remain local and are neither persisted nor
+transmitted. Any structural or semantic change to field names, order, presence,
+values, or meaning requires a new diagnostic contract version.
 
 ## Privacy
 

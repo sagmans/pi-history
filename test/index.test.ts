@@ -571,6 +571,82 @@ test("editor status stays ready until degradation is observed", async () => {
 	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /editor=ready/);
 });
 
+test("initialization failure outranks and retains unavailable editor detail", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.context.ui.getEditorComponent = undefined;
+	fixture.context.ui.setEditorComponent = undefined;
+	fixture.install({
+		readConfig: () => {
+			throw new Error("private failure at /private/config");
+		},
+	});
+	await fixture.emitSessionStart();
+
+	await fixture.runCommand("status");
+
+	const status = fixture.context.notifications.at(-1);
+	assert.deepEqual(status, {
+		message:
+			"pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=configuration_load_failed; storage=unavailable; editor=unavailable; editorReason=missing_editor_hooks",
+		type: "warning",
+	});
+	assert.doesNotMatch(status?.message ?? "", /private failure|\/private/);
+	assert.match(notificationText(fixture.context), /private failure at \/private\/config/);
+});
+
+test("write blocking outranks and retains ghost degradation detail", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.store.blockReason = "project_root_mismatch";
+	const inner = new RuntimeEditor("");
+	Object.defineProperty(inner, "getCursor", { value: undefined });
+	fixture.context.editorFactory = () => inner;
+	fixture.install();
+	await fixture.emitSessionStart();
+	instantiateInstalledEditor(fixture.context);
+
+	await fixture.runCommand("status");
+
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=1; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=project_root_mismatch; editor=degraded; editorReason=missing_cursor; cap=500; scope=project",
+		type: "warning",
+	});
+});
+
+test("storage degradation outranks and retains ghost degradation detail", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.store.entriesSnapshot = [entry("review the diff")];
+	fixture.store.recordError = new Error("private failure at /private/history");
+	fixture.context.editorFactory = () => new RuntimeEditor("review the", false);
+	fixture.install();
+	await fixture.emitSessionStart();
+	instantiateInstalledEditor(fixture.context).render(80);
+	await fixture.emitInput({ text: "private prompt", source: "interactive" });
+
+	await fixture.runCommand("status");
+
+	const status = fixture.context.notifications.at(-1);
+	assert.deepEqual(status, {
+		message:
+			"pi-history: diagnosticsVersion=1; state=storage_degraded; initialization=ready; storage=degraded; storageReason=record_failed; editor=degraded; editorReason=missing_render_seam; cap=500; scope=project",
+		type: "warning",
+	});
+	assert.doesNotMatch(status?.message ?? "", /private prompt|private failure|\/private/);
+});
+
+test("unknown command keeps bounded usage behavior", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.install();
+	await fixture.emitSessionStart();
+
+	await fixture.runCommand("unknown private argument");
+
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message: "Usage: /pi-history status|clear",
+		type: "warning",
+	});
+});
+
 function notificationText(context: FakeContext): string {
 	return context.notifications.map((notification) => notification.message).join("\n");
 }
