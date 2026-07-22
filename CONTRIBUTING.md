@@ -12,11 +12,19 @@ npx husky   # one-time: opt into pre-commit/pre-push hooks (dev-only, never inst
 ## Validate before pushing
 
 ```bash
-npm run verify   # biome check + typecheck + tests
+npm run verify:ci   # high-severity audit + biome check + typecheck + tests
 ```
 
-This is the same sequence CI runs on Ubuntu and macOS across Node 22.19.0
-and 24. A PR is not mergeable while any matrix leg is red.
+This is the authoritative maintainer gate and the command CI runs on Ubuntu
+and macOS across Node 22.19.0 and 24. A PR is not mergeable while any matrix
+leg is red.
+
+`npm run verify` is the deterministic, offline subset for quick iteration.
+`npm run audit` is the network-dependent high-severity gate. It currently
+reports the moderate `GHSA-j3f2-48v5-ccww` advisory in `protobufjs` 7.x. The
+package is dev-only, nested inside `@earendil-works/pi-coding-agent`'s
+shrinkwrap, and cannot be updated here until `@google/genai` moves off
+`protobufjs` 7.x; reassess it with every pi dependency bump.
 
 ## Expectations
 

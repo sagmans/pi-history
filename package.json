@@ -34,7 +34,9 @@
 		"typecheck": "tsc --noEmit",
 		"check": "biome check .",
 		"check:fix": "biome check --write .",
-		"verify": "npm run check && npm run typecheck && npm test"
+		"audit": "npm audit --audit-level=high",
+		"verify": "npm run check && npm run typecheck && npm test",
+		"verify:ci": "npm run audit && npm run verify"
 	},
 	"engines": {
 		"node": ">=22.19.0"
