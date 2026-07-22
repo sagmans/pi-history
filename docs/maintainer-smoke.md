@@ -36,12 +36,15 @@ Inside the TUI:
 
 ## Expected evidence
 
-The notification reports zero entries, the configured cap, project scope, and
-a history file beneath the disposable home. Any history-file path outside
-`$PI_HISTORY_SMOKE_HOME/home/` means isolation failed; exit immediately.
+The notification is one versioned, share-safe line:
 
-Do not copy or share the complete terminal output. This pre-diagnostic status
-format still contains local paths; issue #8 replaces it with a share-safe line.
+```text
+pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=0; cap=2000; scope=project
+```
+
+The line must not contain the repository path, disposable home, or history-file
+path. Do not copy or share the surrounding terminal output; only the exact
+versioned `pi-history:` line is a diagnostic surface.
 
 ## Common failures
 
@@ -50,5 +53,5 @@ format still contains local paths; issue #8 replaces it with a share-safe line.
   from the repository root and confirm Node.js satisfies `package.json`.
 - No pi-history notification: inspect the visible extension error; the local
   checkout did not load correctly.
-- History path escapes the disposable home: confirm both environment overrides
-  are assigned on the Pi invocation.
+- Status contains a filesystem path: stop and treat the diagnostic contract as
+  failed; confirm the local checkout contains the expected changes.

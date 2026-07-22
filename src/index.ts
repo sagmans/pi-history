@@ -14,6 +14,7 @@ import {
 	normalizeConfig,
 	type PiHistoryConfig,
 } from "./config.ts";
+import { formatDiagnostic } from "./diagnostics.ts";
 import { HistoryEditor } from "./history-editor.ts";
 import {
 	type ClearHistoryResult,
@@ -346,19 +347,30 @@ function buildStatusMessage(state: RuntimeState, store: PiHistoryStore | undefin
 			? `pi-history unavailable: ${state.lastError}`
 			: "pi-history is not initialized";
 	}
-	const blocked = store.writeBlocked
-		? `; writeBlocked=${store.writeBlockedReason ?? "unknown"}`
-		: "";
-	const scope =
-		state.identity.isolationLevel === IsolationLevel.Global
-			? "scope=global"
-			: `project=${state.identity.projectRoot}`;
-	return [
-		`pi-history: entries=${store.entryCount}`,
-		`cap=${state.config.maxEntries}`,
-		scope,
-		`file=${store.historyFilePath}${blocked}`,
-	].join("; ");
+	if (store.writeBlocked) {
+		const scope =
+			state.identity.isolationLevel === IsolationLevel.Global
+				? "scope=global"
+				: `project=${state.identity.projectRoot}`;
+		return [
+			`pi-history: entries=${store.entryCount}`,
+			`cap=${state.config.maxEntries}`,
+			scope,
+			`file=${store.historyFilePath}; writeBlocked=${store.writeBlockedReason ?? "unknown"}`,
+		].join("; ");
+	}
+	return formatDiagnostic({
+		state: "healthy",
+		initialization: "ready",
+		storage: "ready",
+		editor: "ready",
+		entries: store.entryCount,
+		cap: state.config.maxEntries,
+		scope:
+			state.identity.isolationLevel === IsolationLevel.Global
+				? IsolationLevel.Global
+				: IsolationLevel.Project,
+	});
 }
 
 function notifyConfigWarnings(ctx: PiHistoryContext, state: RuntimeState): void {

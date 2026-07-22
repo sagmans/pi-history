@@ -77,6 +77,18 @@ The highest file that mentions an option wins. If that file's value is
 invalid, the built-in default applies and a warning is shown — a broken
 override is never silently masked by lower-precedence config.
 
+## Diagnostics
+
+A healthy `/pi-history status` notification uses a fixed, versioned format:
+
+```text
+pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=12; cap=2000; scope=project
+```
+
+Share only a `pi-history:` line containing `diagnosticsVersion=1`. Versioned
+diagnostics omit prompt text and exact filesystem paths. Surrounding warnings
+and terminal output are local operational notices, not share-safe diagnostics.
+
 ## Privacy
 
 All history stays on your machine under `~/.pi/agent/pi-history/`. Nothing is

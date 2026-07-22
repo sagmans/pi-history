@@ -100,7 +100,7 @@ test("project isolation keeps git-based identity resolution", async () => {
 	assert.notEqual(loadedIdentity?.projectRoot, GLOBAL_SCOPE_KEY);
 });
 
-test("status reports scope=global for global histories", async () => {
+test("healthy global status uses the versioned diagnostic contract", async () => {
 	const fixture = createRuntimeFixture({
 		isolationLevel: IsolationLevel.Global,
 	});
@@ -109,9 +109,11 @@ test("status reports scope=global for global histories", async () => {
 
 	await fixture.runCommand("status");
 
-	const message = fixture.context.notifications.at(-1)?.message ?? "";
-	assert.match(message, /scope=global/);
-	assert.doesNotMatch(message, /project=/);
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=0; cap=500; scope=global",
+		type: "info",
+	});
 });
 
 test("clear on global scope confirms with host-wide wording", async () => {
@@ -229,6 +231,25 @@ test("blocked input capture warns once and continues", async () => {
 	assert.deepEqual(second, { action: "continue" });
 	assert.equal(notificationText(fixture.context).match(/write blocked/g)?.length, 1);
 	assert.doesNotMatch(notificationText(fixture.context), /alpha|beta/);
+});
+
+test("healthy project status omits private data without mutating runtime state", async () => {
+	const fixture = createRuntimeFixture({ configMaxEntries: 42 });
+	fixture.store.entriesSnapshot = [entry("secret prompt text")];
+	const runtime = fixture.install();
+	await fixture.emitSessionStart();
+	const initializedState = runtime.getState();
+
+	await fixture.runCommand("status");
+	await fixture.runCommand("status");
+
+	assert.deepEqual(runtime.getState(), initializedState);
+	assert.equal(fixture.store.clearCount, 0);
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=1; cap=42; scope=project",
+		type: "info",
+	});
 });
 
 test("status reports project metadata without prompt contents", async () => {
