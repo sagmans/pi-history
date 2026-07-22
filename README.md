@@ -164,7 +164,7 @@ default keeps each repository's prompts in its own file.
 
 Maintenance is owner-authorized. Public bug reports are welcome, but external
 pull requests and feature requests are not accepted; see the
-[participation policy](CONTRIBUTING.md).
+[participation policy](https://github.com/sagmans/pi-history/blob/main/CONTRIBUTING.md).
 
 Requires Node.js >= 22.19.0 (tests use `node --experimental-transform-types`).
 
@@ -182,7 +182,7 @@ npm run smoke:herdr  # disposable real-TUI smoke; Herdr maintainers only
 
 `npm run verify:ci` is the authoritative maintainer gate and runs in every CI
 matrix leg. `npm run verify` is its deterministic offline subset. The Herdr
-smoke remains outside CI; see [`docs/maintainer-smoke.md`](docs/maintainer-smoke.md).
+smoke remains outside CI; see [`docs/maintainer-smoke.md`](https://github.com/sagmans/pi-history/blob/main/docs/maintainer-smoke.md).
 The audit
 currently reports moderate `GHSA-j3f2-48v5-ccww` in the dev-only `protobufjs`
 copy nested under pi; reassess it with every pi dependency update.
@@ -207,5 +207,5 @@ npx husky
 
 ## License
 
-[MIT](LICENSE) · [Security](SECURITY.md) · [Report bugs](CONTRIBUTING.md) ·
-[Releases](RELEASE.md)
+[MIT](LICENSE) · [Security](https://github.com/sagmans/pi-history/blob/main/SECURITY.md) · [Report bugs](https://github.com/sagmans/pi-history/blob/main/CONTRIBUTING.md) ·
+[Releases](https://github.com/sagmans/pi-history/blob/main/RELEASE.md)
