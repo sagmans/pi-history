@@ -22,7 +22,7 @@ import { createGlobalIdentity, createProjectIdentity, GLOBAL_SCOPE_KEY } from ".
 
 const FIXTURE_TIMESTAMP = "2026-07-01T00:00:00.000Z";
 const UNSUPPORTED_SCHEMA_VERSION = HISTORY_SCHEMA_VERSION + 1;
-const INVALID_SCHEMA_VERSIONS: ReadonlyArray<{ label: string; value?: unknown }> = [
+const INVALID_SCHEMA_VERSIONS: ReadonlyArray<Readonly<{ label: string; value?: unknown }>> = [
 	{ label: "missing" },
 	{ label: "string", value: String(UNSUPPORTED_SCHEMA_VERSION) },
 	{ label: "zero", value: 0 },
@@ -264,6 +264,30 @@ for (const invalidSchema of INVALID_SCHEMA_VERSIONS) {
 		});
 	});
 }
+
+test("malformed schema-1 content remains recoverable corruption", async () => {
+	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
+		// Version matches but an entry lacks required fields, so normalization must fail.
+		const raw = {
+			schemaVersion: HISTORY_SCHEMA_VERSION,
+			projectRoot,
+			createdAt: FIXTURE_TIMESTAMP,
+			updatedAt: FIXTURE_TIMESTAMP,
+			entries: [{ text: "synthetic prompt with missing fields" }],
+		};
+		mkdirSync(path.dirname(storePath), { recursive: true });
+		writeFileSync(storePath, serializeHistory(raw), "utf8");
+
+		const store = await loadStore();
+		assert.equal(store.writeBlockedReason, "corrupt_history");
+
+		const clearResult = await store.clear();
+
+		assert.equal(store.writeBlocked, false);
+		assert.deepEqual(clearResult, { kind: "cleared" });
+		assert.equal(JSON.parse(readFileSync(storePath, "utf8")).schemaVersion, HISTORY_SCHEMA_VERSION);
+	});
+});
 
 test("project mismatch blocks writes instead of merging histories", async () => {
 	await withStoreFixture(async ({ storePath, loadStore }) => {
