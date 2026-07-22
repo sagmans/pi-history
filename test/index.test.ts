@@ -53,6 +53,25 @@ test("config loading waits for TUI session start", async () => {
 	assert.equal(configReads, 1);
 });
 
+test("status observes state without initializing the runtime", async () => {
+	const fixture = createRuntimeFixture();
+	let configReads = 0;
+	fixture.install({
+		readConfig: () => {
+			configReads++;
+			return {};
+		},
+	});
+
+	await fixture.runCommand("status");
+
+	assert.equal(configReads, 0);
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message: "pi-history is not initialized",
+		type: "info",
+	});
+});
+
 test("global isolation resolves the global identity without git discovery", async () => {
 	const fixture = createRuntimeFixture({
 		isolationLevel: IsolationLevel.Global,
@@ -114,6 +133,86 @@ test("healthy global status uses the versioned diagnostic contract", async () =>
 			"pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=0; cap=500; scope=global",
 		type: "info",
 	});
+});
+
+test("configuration loading failure omits unavailable metadata", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.install({
+		readConfig: () => {
+			throw new Error("config secret at /private/config");
+		},
+	});
+	await fixture.emitSessionStart();
+
+	await fixture.runCommand("status");
+
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=configuration_load_failed; storage=unavailable; editor=ready",
+		type: "warning",
+	});
+	assert.match(notificationText(fixture.context), /config secret at \/private\/config/);
+});
+
+test("new TUI session retries failed initialization", async () => {
+	const fixture = createRuntimeFixture();
+	let configReads = 0;
+	fixture.install({
+		readConfig: () => {
+			configReads++;
+			if (configReads === 1) throw new Error("transient config failure");
+			return {};
+		},
+	});
+
+	await fixture.emitSessionStart();
+	await fixture.runCommand("status");
+	await fixture.runCommand("status");
+	assert.equal(configReads, 1);
+
+	await fixture.emitSessionStart();
+	await fixture.runCommand("status");
+
+	assert.equal(configReads, 2);
+	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /state=healthy/);
+});
+
+test("identity resolution failure reports a safe stage code", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.install({
+		resolveIdentity: async () => {
+			throw new Error("identity secret at /private/project");
+		},
+	});
+	await fixture.emitSessionStart();
+
+	await fixture.runCommand("status");
+
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=identity_resolution_failed; storage=unavailable; editor=ready; cap=500; scope=project",
+		type: "warning",
+	});
+	assert.match(notificationText(fixture.context), /identity secret at \/private\/project/);
+});
+
+test("storage loading failure reports a safe stage code", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.install({
+		loadStore: async () => {
+			throw new Error("storage secret at /private/history");
+		},
+	});
+	await fixture.emitSessionStart();
+
+	await fixture.runCommand("status");
+
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=storage_load_failed; storage=unavailable; editor=ready; cap=500; scope=project",
+		type: "warning",
+	});
+	assert.match(notificationText(fixture.context), /storage secret at \/private\/history/);
 });
 
 test("clear on global scope confirms with host-wide wording", async () => {

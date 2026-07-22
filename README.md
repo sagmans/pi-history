@@ -85,9 +85,21 @@ A healthy `/pi-history status` notification uses a fixed, versioned format:
 pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=12; cap=2000; scope=project
 ```
 
+Initialization failures use `state=initialization_failed`,
+`storage=unavailable`, and one bounded reason:
+
+- `configuration_load_failed`
+- `identity_resolution_failed`
+- `storage_load_failed`
+
+Configuration failure omits unavailable `cap` and `scope`; every initialization
+failure omits `entries`. Status reports the latest initialization attempt
+without probing or retrying. Start or reload a TUI session to retry.
+
 Share only a `pi-history:` line containing `diagnosticsVersion=1`. Versioned
-diagnostics omit prompt text and exact filesystem paths. Surrounding warnings
-and terminal output are local operational notices, not share-safe diagnostics.
+diagnostics omit prompt text, raw errors, and exact filesystem paths.
+Surrounding warnings and terminal output are local operational notices, not
+share-safe diagnostics.
 
 ## Privacy
 

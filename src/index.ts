@@ -14,7 +14,7 @@ import {
 	normalizeConfig,
 	type PiHistoryConfig,
 } from "./config.ts";
-import { formatDiagnostic } from "./diagnostics.ts";
+import { formatDiagnostic, type InitializationFailureReason } from "./diagnostics.ts";
 import { HistoryEditor } from "./history-editor.ts";
 import {
 	type ClearHistoryResult,
@@ -108,6 +108,7 @@ export type RuntimeStateSnapshot = {
 	identity: ProjectIdentity | undefined;
 	store: PiHistoryStore | undefined;
 	lastError: string | undefined;
+	initializationFailureReason: InitializationFailureReason | undefined;
 };
 
 type RuntimeState = {
@@ -116,6 +117,7 @@ type RuntimeState = {
 	identity: ProjectIdentity | undefined;
 	store: PiHistoryStore | undefined;
 	lastError: string | undefined;
+	initializationFailureReason: InitializationFailureReason | undefined;
 	notifiedKeys: Set<string>;
 	editorInstalled: boolean;
 };
@@ -130,14 +132,20 @@ export function installPiHistoryForTest(
 		identity: undefined,
 		store: undefined,
 		lastError: undefined,
+		initializationFailureReason: undefined,
 		notifiedKeys: new Set(),
 		editorInstalled: false,
 	};
 	async function initialize(ctx: PiHistoryContext): Promise<void> {
 		if (!state.config) {
-			const loaded = loadRuntimeConfig(options);
-			state.config = loaded.config;
-			state.warnings = loaded.warnings;
+			try {
+				const loaded = loadRuntimeConfig(options);
+				state.config = loaded.config;
+				state.warnings = loaded.warnings;
+			} catch (error) {
+				handleInitializationFailure(ctx, state, "configuration_load_failed", error);
+				return;
+			}
 		}
 		notifyConfigWarnings(ctx, state);
 		const config = state.config;
@@ -149,29 +157,29 @@ export function installPiHistoryForTest(
 				: (runtimeContext: PiHistoryContext) =>
 						resolveProjectIdentity({ cwd: runtimeContext.cwd, exec: pi.exec }));
 		const loadStore = options.loadStore ?? loadHistoryStore;
+		let identity: ProjectIdentity;
 		try {
-			const identity = await resolveIdentity(ctx);
-			const store = await loadStore({
+			identity = await resolveIdentity(ctx);
+		} catch (error) {
+			handleInitializationFailure(ctx, state, "identity_resolution_failed", error);
+			return;
+		}
+		let store: PiHistoryStore;
+		try {
+			store = await loadStore({
 				identity,
 				maxEntries: config.maxEntries,
 				now: options.now,
 			});
-			state.identity = identity;
-			state.store = store;
-			state.lastError = undefined;
-			notifyStoreWarnings(ctx, state, store);
 		} catch (error) {
-			state.identity = undefined;
-			state.store = undefined;
-			state.lastError = errorMessage(error);
-			notifyOnce(
-				ctx,
-				state,
-				`init:${state.lastError}`,
-				`pi-history unavailable: ${state.lastError}`,
-				"warning",
-			);
+			handleInitializationFailure(ctx, state, "storage_load_failed", error);
+			return;
 		}
+		state.identity = identity;
+		state.store = store;
+		state.lastError = undefined;
+		state.initializationFailureReason = undefined;
+		notifyStoreWarnings(ctx, state, store);
 	}
 
 	async function ensureInitialized(ctx: PiHistoryContext): Promise<PiHistoryStore | undefined> {
@@ -216,6 +224,7 @@ export function installPiHistoryForTest(
 			identity: state.identity,
 			store: state.store,
 			lastError: state.lastError,
+			initializationFailureReason: state.initializationFailureReason,
 		}),
 	};
 }
@@ -281,12 +290,16 @@ async function handleCommand(
 ): Promise<void> {
 	if (!isTui(ctx)) return;
 	const command = args.trim() || "status";
-	const store = await ensureInitialized(ctx);
 	if (command === "status") {
-		notify(ctx, buildStatusMessage(state, store), store?.writeBlocked ? "warning" : "info");
+		notify(
+			ctx,
+			buildStatusMessage(state, state.store),
+			state.store?.writeBlocked || state.initializationFailureReason ? "warning" : "info",
+		);
 		return;
 	}
 	if (command === "clear") {
+		const store = await ensureInitialized(ctx);
 		await handleClearCommand(ctx, state.identity, store);
 		return;
 	}
@@ -326,6 +339,25 @@ async function handleClearCommand(
 	);
 }
 
+function handleInitializationFailure(
+	ctx: PiHistoryContext,
+	state: RuntimeState,
+	reason: InitializationFailureReason,
+	error: unknown,
+): void {
+	state.identity = undefined;
+	state.store = undefined;
+	state.lastError = errorMessage(error);
+	state.initializationFailureReason = reason;
+	notifyOnce(
+		ctx,
+		state,
+		`init:${state.lastError}`,
+		`pi-history unavailable: ${state.lastError}`,
+		"warning",
+	);
+}
+
 function handleRecordResult(
 	ctx: PiHistoryContext,
 	state: RuntimeState,
@@ -342,6 +374,29 @@ function handleRecordResult(
 }
 
 function buildStatusMessage(state: RuntimeState, store: PiHistoryStore | undefined): string {
+	if (state.initializationFailureReason === "configuration_load_failed") {
+		return formatDiagnostic({
+			state: "initialization_failed",
+			initialization: "failed",
+			initializationReason: state.initializationFailureReason,
+			storage: "unavailable",
+			editor: "ready",
+		});
+	}
+	if (state.initializationFailureReason && state.config) {
+		return formatDiagnostic({
+			state: "initialization_failed",
+			initialization: "failed",
+			initializationReason: state.initializationFailureReason,
+			storage: "unavailable",
+			editor: "ready",
+			cap: state.config.maxEntries,
+			scope:
+				state.config.isolationLevel === IsolationLevel.Global
+					? IsolationLevel.Global
+					: IsolationLevel.Project,
+		});
+	}
 	if (!store || !state.identity || !state.config) {
 		return state.lastError
 			? `pi-history unavailable: ${state.lastError}`

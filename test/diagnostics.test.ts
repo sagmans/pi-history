@@ -1,7 +1,11 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 
-import { formatDiagnostic, type HealthyDiagnosticSnapshot } from "../src/diagnostics.ts";
+import {
+	type DiagnosticSnapshot,
+	formatDiagnostic,
+	type HealthyDiagnosticSnapshot,
+} from "../src/diagnostics.ts";
 
 const HEALTHY_BASE: Omit<HealthyDiagnosticSnapshot, "scope"> = {
 	state: "healthy",
@@ -18,5 +22,47 @@ for (const scope of ["project", "global"] as const) {
 			formatDiagnostic({ ...HEALTHY_BASE, scope }),
 			`pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=12; cap=2000; scope=${scope}`,
 		);
+	});
+}
+
+type InitializationFailureSnapshot = Extract<
+	DiagnosticSnapshot,
+	{ state: "initialization_failed" }
+>;
+
+const INITIALIZATION_FAILURE_CASES: ReadonlyArray<{
+	snapshot: InitializationFailureSnapshot;
+	expected: string;
+}> = [
+	{
+		snapshot: {
+			state: "initialization_failed",
+			initialization: "failed",
+			initializationReason: "configuration_load_failed",
+			storage: "unavailable",
+			editor: "ready",
+		},
+		expected:
+			"pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=configuration_load_failed; storage=unavailable; editor=ready",
+	},
+	...(["identity_resolution_failed", "storage_load_failed"] as const).map(
+		(initializationReason) => ({
+			snapshot: {
+				state: "initialization_failed" as const,
+				initialization: "failed" as const,
+				initializationReason,
+				storage: "unavailable" as const,
+				editor: "ready" as const,
+				cap: 2000,
+				scope: "project" as const,
+			},
+			expected: `pi-history: diagnosticsVersion=1; state=initialization_failed; initialization=failed; initializationReason=${initializationReason}; storage=unavailable; editor=ready; cap=2000; scope=project`,
+		}),
+	),
+];
+
+for (const { snapshot, expected } of INITIALIZATION_FAILURE_CASES) {
+	test(`${snapshot.initializationReason} diagnostic omits unavailable fields`, () => {
+		assert.equal(formatDiagnostic(snapshot), expected);
 	});
 }
