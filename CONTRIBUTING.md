@@ -20,6 +20,10 @@ and macOS across Node 22.19.0 and 24. A PR is not mergeable while any matrix
 leg is red.
 
 `npm run verify` is the deterministic, offline subset for quick iteration.
+For local extension loading, use the isolated
+[maintainer smoke test](docs/maintainer-smoke.md); never point runtime checks at
+real prompt history.
+
 `npm run audit` is the network-dependent high-severity gate. It currently
 reports the moderate `GHSA-j3f2-48v5-ccww` advisory in `protobufjs` 7.x. The
 package is dev-only, nested inside `@earendil-works/pi-coding-agent`'s
