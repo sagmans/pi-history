@@ -32,15 +32,10 @@ and filesystem filename limits.
 
 ## Installation
 
-```bash
-pi install https://github.com/sagmans/pi-history
-```
-
-Pin a release tag to stay on a fixed version (recommended once releases are
-tagged; unpinned installs track the default branch):
+Install from npm so pi only offers updates after a published release:
 
 ```bash
-pi install git:github.com/sagmans/pi-history@v0.1.0
+pi install npm:pi-history
 ```
 
 ## Supported environments
