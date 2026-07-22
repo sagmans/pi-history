@@ -176,22 +176,45 @@ test("Alt+Right does not accept ghost words across newlines", () => {
 	assert.deepEqual(fixture.inner.handled, [ALT_RIGHT]);
 });
 
-test("unsupported ghost mode reports limitation and keeps Ctrl+R usable", () => {
-	const notifications: string[] = [];
-	const inner = new UnsupportedInner();
-	const editor = createHistoryEditor({
+for (const { method, expectedReason } of [
+	{ method: "getLines", expectedReason: "missing_lines" },
+	{ method: "getCursor", expectedReason: "missing_cursor" },
+	{ method: "insertTextAtCursor", expectedReason: "missing_insertion" },
+] as const) {
+	test(`${expectedReason} disables ghost and keeps Ctrl+R usable`, () => {
+		const reasons: string[] = [];
+		const inner = new FakeInner("");
+		Object.defineProperty(inner, method, { value: undefined });
+		const editor = createHistoryEditor({
+			inner,
+			entries: [entry("review the diff")],
+			onGhostUnavailable: (reason) => reasons.push(reason),
+		});
+
+		editor.handleInput(CTRL_E);
+		editor.handleInput(CTRL_R);
+		editor.handleInput(ENTER);
+
+		assert.deepEqual(reasons, [expectedReason]);
+		assert.deepEqual(inner.handled, [CTRL_E]);
+		assert.equal(inner.text, "review the diff");
+	});
+}
+
+test("multiple missing ghost capabilities use fixed primary priority", () => {
+	const reasons: string[] = [];
+	const inner = new FakeInner("");
+	for (const method of ["getLines", "getCursor", "insertTextAtCursor"] as const) {
+		Object.defineProperty(inner, method, { value: undefined });
+	}
+
+	createHistoryEditor({
 		inner,
-		entries: [entry("review the diff")],
-		onGhostUnavailable: (reason) => notifications.push(reason),
+		entries: [],
+		onGhostUnavailable: (reason) => reasons.push(reason),
 	});
 
-	editor.handleInput(CTRL_E);
-	editor.handleInput(CTRL_R);
-	editor.handleInput(ENTER);
-
-	assert.match(notifications.join("\n"), /does not expose lines/);
-	assert.deepEqual(inner.handled, [CTRL_E]);
-	assert.equal(inner.text, "review the diff");
+	assert.deepEqual(reasons, ["missing_lines"]);
 });
 
 test("missing ghost render seam disables ghost and keeps Ctrl+R usable", () => {
@@ -208,7 +231,7 @@ test("missing ghost render seam disables ghost and keeps Ctrl+R usable", () => {
 	editor.handleInput(CTRL_R);
 	editor.handleInput(ENTER);
 
-	assert.match(notifications.join("\n"), /no safe ghost render seam/);
+	assert.deepEqual(notifications, ["missing_render_seam"]);
 	assert.deepEqual(inner.handled, [CTRL_E]);
 	assert.equal(inner.text, "review the diff");
 });
@@ -510,24 +533,6 @@ class BorderInner extends FakeInner {
 class SeamlessInner extends FakeInner {
 	render(width: number): string[] {
 		return [this.text.padEnd(width, " ")];
-	}
-}
-
-class UnsupportedInner implements WrappedHistoryEditor {
-	handled: string[] = [];
-	text = "";
-	render(): string[] {
-		return [this.text];
-	}
-	handleInput(data: string): void {
-		this.handled.push(data);
-	}
-	invalidate(): void {}
-	getText(): string {
-		return this.text;
-	}
-	setText(text: string): void {
-		this.text = text;
 	}
 }
 

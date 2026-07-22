@@ -14,6 +14,16 @@ import {
 	normalizeConfig,
 	type PiHistoryConfig,
 } from "./config.ts";
+import {
+	createDiagnosticSnapshot,
+	type DiagnosticSnapshot,
+	diagnosticSeverity,
+	type EditorDiagnosticState,
+	formatDiagnostic,
+	type GhostDegradationReason,
+	type InitializationFailureReason,
+	type StorageDegradationReason,
+} from "./diagnostics.ts";
 import { HistoryEditor } from "./history-editor.ts";
 import {
 	type ClearHistoryResult,
@@ -34,6 +44,7 @@ const COMMAND_NAME = "pi-history";
 
 export type PiHistoryContext = {
 	cwd: string;
+	mode: "tui" | "rpc" | "json" | "print";
 	hasUI?: boolean;
 	ui: {
 		notify(message: string, type?: "info" | "warning" | "error"): void;
@@ -97,8 +108,8 @@ export type RuntimeInstallOptions = {
 };
 
 export type PiHistoryRuntime = {
-	config: PiHistoryConfig;
-	warnings: string[];
+	readonly config: PiHistoryConfig | undefined;
+	readonly warnings: readonly string[];
 	getState(): RuntimeStateSnapshot;
 };
 
@@ -106,14 +117,20 @@ export type RuntimeStateSnapshot = {
 	identity: ProjectIdentity | undefined;
 	store: PiHistoryStore | undefined;
 	lastError: string | undefined;
+	initializationFailureReason: InitializationFailureReason | undefined;
+	storageDegradationReason: StorageDegradationReason | undefined;
+	editor: EditorDiagnosticState;
 };
 
 type RuntimeState = {
-	config: PiHistoryConfig;
+	config: PiHistoryConfig | undefined;
 	warnings: string[];
 	identity: ProjectIdentity | undefined;
 	store: PiHistoryStore | undefined;
 	lastError: string | undefined;
+	initializationFailureReason: InitializationFailureReason | undefined;
+	storageDegradationReason: StorageDegradationReason | undefined;
+	editor: EditorDiagnosticState;
 	notifiedKeys: Set<string>;
 	editorInstalled: boolean;
 };
@@ -122,49 +139,62 @@ export function installPiHistoryForTest(
 	pi: PiHistoryApi,
 	options: RuntimeInstallOptions = {},
 ): PiHistoryRuntime {
-	const { config, warnings } = loadRuntimeConfig(options);
 	const state: RuntimeState = {
-		config,
-		warnings,
+		config: undefined,
+		warnings: [],
 		identity: undefined,
 		store: undefined,
 		lastError: undefined,
+		initializationFailureReason: undefined,
+		storageDegradationReason: undefined,
+		editor: { editor: "ready" },
 		notifiedKeys: new Set(),
 		editorInstalled: false,
 	};
-	// Global isolation skips git discovery entirely: one shared history per host.
-	const resolveIdentity =
-		options.resolveIdentity ??
-		(config.isolationLevel === IsolationLevel.Global
-			? () => Promise.resolve(createGlobalIdentity())
-			: (ctx: PiHistoryContext) => resolveProjectIdentity({ cwd: ctx.cwd, exec: pi.exec }));
-	const loadStore = options.loadStore ?? loadHistoryStore;
-
 	async function initialize(ctx: PiHistoryContext): Promise<void> {
+		if (!state.config) {
+			try {
+				const loaded = loadRuntimeConfig(options);
+				state.config = loaded.config;
+				state.warnings = loaded.warnings;
+			} catch (error) {
+				handleInitializationFailure(ctx, state, "configuration_load_failed", error);
+				return;
+			}
+		}
 		notifyConfigWarnings(ctx, state);
+		const config = state.config;
+		// Global isolation skips git discovery entirely: one shared history per host.
+		const resolveIdentity =
+			options.resolveIdentity ??
+			(config.isolationLevel === IsolationLevel.Global
+				? () => Promise.resolve(createGlobalIdentity())
+				: (runtimeContext: PiHistoryContext) =>
+						resolveProjectIdentity({ cwd: runtimeContext.cwd, exec: pi.exec }));
+		const loadStore = options.loadStore ?? loadHistoryStore;
+		let identity: ProjectIdentity;
 		try {
-			const identity = await resolveIdentity(ctx);
-			const store = await loadStore({
+			identity = await resolveIdentity(ctx);
+		} catch (error) {
+			handleInitializationFailure(ctx, state, "identity_resolution_failed", error);
+			return;
+		}
+		let store: PiHistoryStore;
+		try {
+			store = await loadStore({
 				identity,
 				maxEntries: config.maxEntries,
 				now: options.now,
 			});
-			state.identity = identity;
-			state.store = store;
-			state.lastError = undefined;
-			notifyStoreWarnings(ctx, state, store);
 		} catch (error) {
-			state.identity = undefined;
-			state.store = undefined;
-			state.lastError = errorMessage(error);
-			notifyOnce(
-				ctx,
-				state,
-				`init:${state.lastError}`,
-				`pi-history unavailable: ${state.lastError}`,
-				"warning",
-			);
+			handleInitializationFailure(ctx, state, "storage_load_failed", error);
+			return;
 		}
+		state.identity = identity;
+		state.store = store;
+		state.lastError = undefined;
+		state.initializationFailureReason = undefined;
+		notifyStoreWarnings(ctx, state, store);
 	}
 
 	async function ensureInitialized(ctx: PiHistoryContext): Promise<PiHistoryStore | undefined> {
@@ -180,30 +210,39 @@ export function installPiHistoryForTest(
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		if (!isTui(ctx)) return;
 		installEditorWrapper(ctx, state);
 		await initialize(ctx);
 	});
 
 	pi.on("input", async (event, ctx) => {
-		if (!shouldCaptureInput(event)) return { action: "continue" };
+		if (!isTui(ctx) || !shouldCaptureInput(event)) return { action: "continue" };
 		const store = await ensureInitialized(ctx);
 		if (!store) return { action: "continue" };
 		try {
 			const result = await store.recordPrompt(event.text);
 			handleRecordResult(ctx, state, result);
 		} catch (error) {
+			state.storageDegradationReason = "record_failed";
 			notify(ctx, `pi-history capture failed: ${errorMessage(error)}`, "warning");
 		}
 		return { action: "continue" };
 	});
 
 	return {
-		config,
-		warnings,
+		get config() {
+			return state.config;
+		},
+		get warnings() {
+			return state.warnings;
+		},
 		getState: () => ({
 			identity: state.identity,
 			store: state.store,
 			lastError: state.lastError,
+			initializationFailureReason: state.initializationFailureReason,
+			storageDegradationReason: state.storageDegradationReason,
+			editor: state.editor,
 		}),
 	};
 }
@@ -214,11 +253,21 @@ export function shouldCaptureInput(event: Pick<InputEvent, "source" | "text">): 
 
 function installEditorWrapper(ctx: PiHistoryContext, state: RuntimeState): void {
 	if (state.editorInstalled) return;
-	if (ctx.hasUI === false) return;
 	const getEditorComponent = ctx.ui.getEditorComponent;
 	const setEditorComponent = ctx.ui.setEditorComponent;
-	if (!getEditorComponent || !setEditorComponent) return;
+	if (ctx.hasUI === false || !getEditorComponent || !setEditorComponent) {
+		state.editor = { editor: "unavailable", editorReason: "missing_editor_hooks" };
+		notifyOnce(
+			ctx,
+			state,
+			"editor:missing_editor_hooks",
+			"pi-history editor integration unavailable: missing editor hooks; Ctrl+R and ghost completion disabled",
+			"warning",
+		);
+		return;
+	}
 
+	state.editor = { editor: "ready" };
 	const previousFactory = getEditorComponent();
 	setEditorComponent((tui, theme, keybindings) => {
 		const inner = previousFactory
@@ -229,11 +278,12 @@ function installEditorWrapper(ctx: PiHistoryContext, state: RuntimeState): void 
 			getSearchMatchColorSgr: () => ctx.ui.theme.getFgAnsi("mdCode"),
 			getSearchSelectedColorSgr: () => ctx.ui.theme.getFgAnsi("accent"),
 			onGhostUnavailable: (reason) => {
+				state.editor = { editor: "degraded", editorReason: reason };
 				notifyOnce(
 					ctx,
 					state,
 					`ghost:${reason}`,
-					`pi-history ghost completion disabled: ${reason}; Ctrl+R reverse search remains available`,
+					`pi-history ghost completion disabled: ${ghostDegradationMessage(reason)}; Ctrl+R reverse search remains available`,
 					"info",
 				);
 			},
@@ -267,14 +317,16 @@ async function handleCommand(
 	state: RuntimeState,
 	ensureInitialized: (ctx: PiHistoryContext) => Promise<PiHistoryStore | undefined>,
 ): Promise<void> {
+	if (!isTui(ctx)) return;
 	const command = args.trim() || "status";
-	const store = await ensureInitialized(ctx);
 	if (command === "status") {
-		notify(ctx, buildStatusMessage(state, store), store?.writeBlocked ? "warning" : "info");
+		const status = buildStatus(state, state.store);
+		notify(ctx, status.message, status.type);
 		return;
 	}
 	if (command === "clear") {
-		await handleClearCommand(ctx, state.identity, store);
+		const store = await ensureInitialized(ctx);
+		await handleClearCommand(ctx, state, store);
 		return;
 	}
 	notify(ctx, "Usage: /pi-history status|clear", "warning");
@@ -282,7 +334,7 @@ async function handleCommand(
 
 async function handleClearCommand(
 	ctx: PiHistoryContext,
-	identity: ProjectIdentity | undefined,
+	state: RuntimeState,
 	store: PiHistoryStore | undefined,
 ): Promise<void> {
 	if (!canUseUi(ctx)) return;
@@ -290,7 +342,7 @@ async function handleClearCommand(
 		notify(ctx, "pi-history is unavailable; nothing was cleared", "warning");
 		return;
 	}
-	const globalScope = identity?.isolationLevel === IsolationLevel.Global;
+	const globalScope = state.identity?.isolationLevel === IsolationLevel.Global;
 	const confirmed = await ctx.ui.confirm(
 		"Clear pi-history?",
 		globalScope
@@ -301,15 +353,42 @@ async function handleClearCommand(
 		notify(ctx, "pi-history clear cancelled", "info");
 		return;
 	}
-	const result = await store.clear();
+	let result: ClearHistoryResult;
+	try {
+		result = await store.clear();
+	} catch (error) {
+		state.storageDegradationReason = "clear_failed";
+		notify(ctx, `pi-history clear failed: ${errorMessage(error)}`, "warning");
+		return;
+	}
 	if (result.kind === "blocked") {
 		notify(ctx, `pi-history clear blocked: ${result.reason}`, "warning");
 		return;
 	}
+	state.storageDegradationReason = undefined;
 	notify(
 		ctx,
 		globalScope ? "pi-history cleared (global scope)" : "pi-history cleared for current project",
 		"info",
+	);
+}
+
+function handleInitializationFailure(
+	ctx: PiHistoryContext,
+	state: RuntimeState,
+	reason: InitializationFailureReason,
+	error: unknown,
+): void {
+	state.identity = undefined;
+	state.store = undefined;
+	state.lastError = errorMessage(error);
+	state.initializationFailureReason = reason;
+	notifyOnce(
+		ctx,
+		state,
+		`init:${state.lastError}`,
+		`pi-history unavailable: ${state.lastError}`,
+		"warning",
 	);
 }
 
@@ -318,6 +397,10 @@ function handleRecordResult(
 	state: RuntimeState,
 	result: RecordPromptResult,
 ): void {
+	if (result.kind === "recorded") {
+		state.storageDegradationReason = undefined;
+		return;
+	}
 	if (result.kind !== "blocked") return;
 	notifyOnce(
 		ctx,
@@ -328,25 +411,92 @@ function handleRecordResult(
 	);
 }
 
-function buildStatusMessage(state: RuntimeState, store: PiHistoryStore | undefined): string {
-	if (!store || !state.identity) {
-		return state.lastError
-			? `pi-history unavailable: ${state.lastError}`
-			: "pi-history is not initialized";
+function buildStatus(
+	state: RuntimeState,
+	store: PiHistoryStore | undefined,
+): { message: string; type: "info" | "warning" } {
+	const snapshot = buildDiagnosticSnapshot(state, store);
+	return snapshot
+		? { message: formatDiagnostic(snapshot), type: diagnosticSeverity(snapshot) }
+		: { message: "pi-history is not initialized", type: "info" };
+}
+
+function buildDiagnosticSnapshot(
+	state: RuntimeState,
+	store: PiHistoryStore | undefined,
+): DiagnosticSnapshot | undefined {
+	if (state.initializationFailureReason === "configuration_load_failed") {
+		return createDiagnosticSnapshot({
+			initialization: "failed",
+			initializationReason: state.initializationFailureReason,
+			storage: "unavailable",
+			...state.editor,
+		});
 	}
-	const blocked = store.writeBlocked
-		? `; writeBlocked=${store.writeBlockedReason ?? "unknown"}`
-		: "";
+	if (state.initializationFailureReason && state.config) {
+		return createDiagnosticSnapshot({
+			initialization: "failed",
+			initializationReason: state.initializationFailureReason,
+			storage: "unavailable",
+			...state.editor,
+			cap: state.config.maxEntries,
+			scope:
+				state.config.isolationLevel === IsolationLevel.Global
+					? IsolationLevel.Global
+					: IsolationLevel.Project,
+		});
+	}
+	if (!store || !state.identity || !state.config) return undefined;
 	const scope =
 		state.identity.isolationLevel === IsolationLevel.Global
-			? "scope=global"
-			: `project=${state.identity.projectRoot}`;
-	return [
-		`pi-history: entries=${store.entryCount}`,
-		`cap=${state.config.maxEntries}`,
+			? IsolationLevel.Global
+			: IsolationLevel.Project;
+	if (store.writeBlocked) {
+		// HistoryStore guarantees a bounded reason whenever writeBlocked is true.
+		return createDiagnosticSnapshot({
+			initialization: "ready",
+			storage: "write_blocked",
+			storageReason: store.writeBlockedReason as HistoryBlockReason,
+			...state.editor,
+			cap: state.config.maxEntries,
+			scope,
+		});
+	}
+	if (state.storageDegradationReason) {
+		return createDiagnosticSnapshot({
+			initialization: "ready",
+			storage: "degraded",
+			storageReason: state.storageDegradationReason,
+			...state.editor,
+			cap: state.config.maxEntries,
+			scope,
+		});
+	}
+	return createDiagnosticSnapshot({
+		initialization: "ready",
+		storage: "ready",
+		...state.editor,
+		entries: store.entryCount,
+		cap: state.config.maxEntries,
 		scope,
-		`file=${store.historyFilePath}${blocked}`,
-	].join("; ");
+	});
+}
+
+function ghostDegradationMessage(reason: GhostDegradationReason): string {
+	switch (reason) {
+		case "missing_lines":
+			return "wrapped editor does not expose lines";
+		case "missing_cursor":
+			return "wrapped editor does not expose cursor";
+		case "missing_insertion":
+			return "wrapped editor cannot accept ghost text";
+		case "missing_render_seam":
+			return "wrapped editor has no safe ghost render seam";
+		default: {
+			const exhaustive: never = reason;
+			return exhaustive;
+		}
+	}
 }
 
 function notifyConfigWarnings(ctx: PiHistoryContext, state: RuntimeState): void {
@@ -380,6 +530,10 @@ function notifyOnce(
 function notify(ctx: PiHistoryContext, message: string, type: "info" | "warning" | "error"): void {
 	if (!canUseUi(ctx)) return;
 	ctx.ui.notify(message, type);
+}
+
+function isTui(ctx: PiHistoryContext): boolean {
+	return ctx.mode === "tui";
 }
 
 function canUseUi(ctx: PiHistoryContext): boolean {

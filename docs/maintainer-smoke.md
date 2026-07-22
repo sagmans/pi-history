@@ -1,54 +1,59 @@
 # Maintainer smoke test
 
-Use this smoke test after runtime-loading changes. It loads the checkout as a
-local pi package, invokes `/pi-history status` through RPC mode, and prevents pi
-or the extension from reaching real state under `~/.pi/agent`.
+Use this maintainer-only Herdr smoke after runtime-loading changes. It launches
+the checkout as a real Pi TUI package without reading or mutating real state
+under `~/.pi/agent`.
 
-## Run from the repository root
+## Preconditions
 
-Install the locked development dependencies first:
+- Run inside a Herdr-managed pane with `HERDR_ENV=1`.
+- Install `herdr`, `pi`, Node.js, and the locked project dependencies.
+- The command surface is tested with Herdr `0.7.4`; the script reports the
+  installed version and checks required commands before creating anything.
+
+From the repository root:
 
 ```bash
 npm ci --ignore-scripts
+npm run smoke:herdr
 ```
 
-Then run the isolated smoke test:
+The smoke is intentionally outside `npm run verify:ci`; Herdr is maintainer
+infrastructure, not a package-user or CI dependency.
 
-```bash
-PI_BIN="$(command -v pi)"
-PI_HISTORY_SMOKE_HOME="$(mktemp -d "${TMPDIR:-/tmp}/pi-history-smoke.XXXXXX")"
-trap 'rm -rf "$PI_HISTORY_SMOKE_HOME"' EXIT
+## Isolation and evidence
 
-printf '%s\n' \
-  '{"id":"status","type":"prompt","message":"/pi-history status"}' |
-  HOME="$PI_HISTORY_SMOKE_HOME/home" \
-  PI_CODING_AGENT_DIR="$PI_HISTORY_SMOKE_HOME/agent" \
-  "$PI_BIN" --mode rpc --no-session -e .
+The script:
+
+1. Creates disposable `HOME` and `PI_CODING_AGENT_DIR` trees.
+2. Seeds synthetic global history containing a secret canary without submitting
+   any model prompt.
+3. Opens a non-focused sibling pane and launches
+   `pi --approve --no-session -e .` with one-run project trust, update checks,
+   and telemetry disabled.
+4. Waits for concrete TUI readiness, invokes `/pi-history status`, and keeps raw
+   pane output only in memory.
+5. Extracts the exact diagnostic line and verifies this contract:
+
+```text
+pi-history: diagnosticsVersion=1; state=healthy; initialization=ready; storage=ready; editor=ready; entries=1; cap=42; scope=global
 ```
 
-Both overrides are required. `PI_CODING_AGENT_DIR` isolates pi settings and
-credentials; `HOME` isolates pi-history's data directory. `--no-session`
-prevents session persistence. The exit trap removes all disposable state.
+6. Verifies the extracted line omits the canary, repository path, history path,
+   disposable home, and agent directory.
+7. Requests a clean Pi exit, closes only the pane it created, and removes all
+   disposable state on success or failure.
 
-## Expected evidence
-
-Success emits a notification and command response similar to:
-
-```json
-{"type":"extension_ui_request","method":"notify","message":"pi-history: entries=0; cap=2000; project=/path/to/repository; file=/tmp/pi-history-smoke.../home/.pi/agent/pi-history/project-....json","notifyType":"info"}
-{"id":"status","type":"response","command":"prompt","success":true}
-```
-
-The generated `file=` path must begin with the disposable
-`$PI_HISTORY_SMOKE_HOME/home/` path. Any path under the maintainer's real home
-means isolation failed; stop without running further commands.
+Only the validated `pi-history:` line is share-safe. Never persist or share raw
+TUI capture: Pi itself may render repository and disposable paths unrelated to
+pi-history diagnostics.
 
 ## Common failures
 
-- `pi: command not found`: install a supported pi version or add it to `PATH`.
-- Module resolution or extension-load errors: rerun `npm ci --ignore-scripts`
-  from the repository root and confirm Node.js satisfies `package.json`.
-- A successful response without the `pi-history` notification: inspect preceding
-  `extension_error` output; the local checkout did not load correctly.
-- `file=` points outside the disposable directory: confirm both `HOME` and
-  `PI_CODING_AGENT_DIR` are assigned on the `pi` invocation.
+- `HERDR_ENV=1 is required`: run the smoke from a Herdr-managed pane.
+- Missing Herdr command: install a compatible Herdr version and compare its
+  reported command surface with tested version `0.7.4`.
+- `pi is not available`: install a supported Pi version or add it to `PATH`.
+- Pi readiness timeout: confirm the local TUI can launch with disposable state.
+- Diagnostic mismatch or private-data failure: treat the diagnostic contract as
+  failed; do not share captured pane output.

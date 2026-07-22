@@ -15,6 +15,8 @@ requests are unsupported; read the [participation policy](CONTRIBUTING.md).
   reporting and secret handling.
 - Releases: follow [`RELEASE.md`](RELEASE.md); never invent or waive a release
   gate not recorded there.
+- Changelog: update [`CHANGELOG.md`](CHANGELOG.md#unreleased) before merging any
+  pull request.
 
 ## Privacy invariants
 

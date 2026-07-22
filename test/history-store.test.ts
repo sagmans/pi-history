@@ -156,6 +156,12 @@ test("corrupt JSON returns write-blocked state and preserves file", async () => 
 		assert.equal(result.kind, "blocked");
 		assert.equal(store.warnings.join("\n").includes(storePath), false);
 		assert.equal(readFileSync(storePath, "utf8"), "not json");
+
+		const clearResult = await store.clear();
+
+		assert.deepEqual(clearResult, { kind: "cleared" });
+		assert.equal(store.writeBlocked, false);
+		assert.equal((await loadStore()).writeBlocked, false);
 	});
 });
 
@@ -179,6 +185,12 @@ test("project mismatch blocks writes instead of merging histories", async () => 
 		assert.match(store.warnings.join("\n"), /belongs to/);
 		assert.equal(store.warnings.join("\n").includes("/other/project"), false);
 		assert.equal(store.warnings.join("\n").includes(storePath), false);
+
+		const clearResult = await store.clear();
+
+		assert.equal(clearResult.kind, "blocked");
+		assert.equal(store.writeBlockedReason, "project_root_mismatch");
+		assert.equal(JSON.parse(readFileSync(storePath, "utf8")).projectRoot, "/other/project");
 	});
 });
 
