@@ -1,57 +1,30 @@
-# Contributing
+# Participation policy
 
-## Setup
+This project accepts public bug reports only. External pull requests, feature
+requests, support requests, and implementation proposals are not accepted.
+Unsolicited pull requests will be closed.
 
-Requires Node.js >= 22.19.0 (see [Supported environments](README.md#supported-environments)).
+## Report a bug
 
-```bash
-npm ci --ignore-scripts
-npx husky   # one-time: opt into pre-commit/pre-push hooks (dev-only, never installed for users)
-```
+Use the repository's [bug report form](https://github.com/sagmans/pi-history/issues/new?template=bug_report.yml)
+and include:
 
-## Validate before pushing
+- affected pi-history version or commit,
+- operating system, Node.js version, pi version, and terminal,
+- minimal reproduction steps,
+- expected and actual behavior,
+- synthetic or redacted diagnostic evidence.
 
-```bash
-npm run verify:ci   # high-severity audit + biome check + typecheck + tests
-```
+Search existing issues before filing. Never include prompt contents, credentials,
+private paths, or other sensitive data.
 
-This is the authoritative maintainer gate and the command CI runs on Ubuntu
-and macOS across Node 22.19.0 and 24. A PR is not mergeable while any matrix
-leg is red.
+## Security reports
 
-`npm run verify` is the deterministic, offline subset for quick iteration.
-For local extension loading, use the isolated
-[maintainer smoke test](docs/maintainer-smoke.md); never point runtime checks at
-real prompt history.
+Do not report vulnerabilities publicly. Follow the private process in
+[`SECURITY.md`](SECURITY.md).
 
-`npm run audit` is the network-dependent high-severity gate. It currently
-reports the moderate `GHSA-j3f2-48v5-ccww` advisory in `protobufjs` 7.x. The
-package is dev-only, nested inside `@earendil-works/pi-coding-agent`'s
-shrinkwrap, and cannot be updated here until `@google/genai` moves off
-`protobufjs` 7.x; reassess it with every pi dependency bump.
+## Custom behavior
 
-## Expectations
-
-- **Tests and docs travel with behavior changes.** Every fix or feature
-  ships with its regression test; user-visible changes update `README.md`.
-- **Privacy is a hard constraint.** History data stays local, private
-  (0700/0600), and project-isolated by default. Do not add network calls,
-  telemetry, or cross-project reads without an explicit, documented opt-in.
-- **Commit style:** Conventional Commits, DCO sign-off (`git commit -s`),
-  GPG signature (`-S`). Explain *why*, not *what*.
-- **Inbound = outbound:** by submitting a PR you certify your contribution
-  is your own work (or you have rights to it) and license it under the
-  project's MIT license (see [DCO](https://developercertificate.org)).
-
-## Review
-
-PRs are reviewed by the maintainer before merge. Squash merge; the PR title
-becomes the commit subject, so keep it in Conventional Commits format.
-
-## Releases
-
-Maintainers only — see [RELEASE.md](RELEASE.md).
-
-## Security
-
-Do not file public issues for vulnerabilities — see [SECURITY.md](SECURITY.md).
+Fork the repository and maintain the fork for features, integrations, or policy
+changes outside this project's scope. The maintainer cannot provide design,
+implementation, review, release, or support services for forks.
