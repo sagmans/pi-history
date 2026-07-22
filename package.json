@@ -1,7 +1,7 @@
 {
 	"name": "pi-history",
 	"version": "0.1.1",
-	"description": "Ghost completion for prompt history across pi sessions",
+	"description": "Ghost completion for prompt history in pi's TUI",
 	"license": "MIT",
 	"files": [
 		"index.ts",

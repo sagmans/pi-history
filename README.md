@@ -14,8 +14,8 @@ and filesystem filename limits.
 
 ## Features
 
-- Records interactive and RPC user input; skips extension-injected messages and
-  blank prompts, preserves multiline text.
+- Records TUI user input; skips extension-injected messages and blank prompts,
+  preserves multiline text. RPC, JSON, and print modes remain inert.
 - Caps each project at `maxEntries`; exact duplicates move to newest instead of
   storing copies.
 - `/pi-history status` reports only metadata.
@@ -46,6 +46,7 @@ pi install npm:pi-history
 | Node.js | `>=22.19.0` | CI tests exact minimum `22.19.0` and current `24` |
 | pi | `>=0.80.x`, tested at `0.81.1` | Peer range is `*` per pi packaging rules; that is a loading requirement, not a support promise |
 | Terminal | tested under [herdr](https://github.com/fitchmultz/herdr) and standard macOS terminals | Ghost completion is best effort and degrades gracefully (see Features) |
+| Pi mode | TUI | RPC, JSON, and print may expose command metadata but perform no pi-history runtime work |
 
 CI runs `npm run verify:ci` on Ubuntu and macOS across both Node versions.
 
@@ -80,6 +81,8 @@ override is never silently masked by lower-precedence config.
 
 All history stays on your machine under `~/.pi/agent/pi-history/`. Nothing is
 sent anywhere. Directory and files are created with private permissions.
+Runtime behavior is limited to Pi's TUI; other modes do not load or mutate
+pi-history state.
 
 Note what the scope choice means: with global isolation, prompts from every
 project (work repos included) land in one shared `global.json` and are

@@ -34,6 +34,7 @@ const COMMAND_NAME = "pi-history";
 
 export type PiHistoryContext = {
 	cwd: string;
+	mode: "tui" | "rpc" | "json" | "print";
 	hasUI?: boolean;
 	ui: {
 		notify(message: string, type?: "info" | "warning" | "error"): void;
@@ -97,8 +98,8 @@ export type RuntimeInstallOptions = {
 };
 
 export type PiHistoryRuntime = {
-	config: PiHistoryConfig;
-	warnings: string[];
+	readonly config: PiHistoryConfig | undefined;
+	readonly warnings: readonly string[];
 	getState(): RuntimeStateSnapshot;
 };
 
@@ -109,7 +110,7 @@ export type RuntimeStateSnapshot = {
 };
 
 type RuntimeState = {
-	config: PiHistoryConfig;
+	config: PiHistoryConfig | undefined;
 	warnings: string[];
 	identity: ProjectIdentity | undefined;
 	store: PiHistoryStore | undefined;
@@ -122,26 +123,31 @@ export function installPiHistoryForTest(
 	pi: PiHistoryApi,
 	options: RuntimeInstallOptions = {},
 ): PiHistoryRuntime {
-	const { config, warnings } = loadRuntimeConfig(options);
 	const state: RuntimeState = {
-		config,
-		warnings,
+		config: undefined,
+		warnings: [],
 		identity: undefined,
 		store: undefined,
 		lastError: undefined,
 		notifiedKeys: new Set(),
 		editorInstalled: false,
 	};
-	// Global isolation skips git discovery entirely: one shared history per host.
-	const resolveIdentity =
-		options.resolveIdentity ??
-		(config.isolationLevel === IsolationLevel.Global
-			? () => Promise.resolve(createGlobalIdentity())
-			: (ctx: PiHistoryContext) => resolveProjectIdentity({ cwd: ctx.cwd, exec: pi.exec }));
-	const loadStore = options.loadStore ?? loadHistoryStore;
-
 	async function initialize(ctx: PiHistoryContext): Promise<void> {
+		if (!state.config) {
+			const loaded = loadRuntimeConfig(options);
+			state.config = loaded.config;
+			state.warnings = loaded.warnings;
+		}
 		notifyConfigWarnings(ctx, state);
+		const config = state.config;
+		// Global isolation skips git discovery entirely: one shared history per host.
+		const resolveIdentity =
+			options.resolveIdentity ??
+			(config.isolationLevel === IsolationLevel.Global
+				? () => Promise.resolve(createGlobalIdentity())
+				: (runtimeContext: PiHistoryContext) =>
+						resolveProjectIdentity({ cwd: runtimeContext.cwd, exec: pi.exec }));
+		const loadStore = options.loadStore ?? loadHistoryStore;
 		try {
 			const identity = await resolveIdentity(ctx);
 			const store = await loadStore({
@@ -180,12 +186,13 @@ export function installPiHistoryForTest(
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		if (!isTui(ctx)) return;
 		installEditorWrapper(ctx, state);
 		await initialize(ctx);
 	});
 
 	pi.on("input", async (event, ctx) => {
-		if (!shouldCaptureInput(event)) return { action: "continue" };
+		if (!isTui(ctx) || !shouldCaptureInput(event)) return { action: "continue" };
 		const store = await ensureInitialized(ctx);
 		if (!store) return { action: "continue" };
 		try {
@@ -198,8 +205,12 @@ export function installPiHistoryForTest(
 	});
 
 	return {
-		config,
-		warnings,
+		get config() {
+			return state.config;
+		},
+		get warnings() {
+			return state.warnings;
+		},
 		getState: () => ({
 			identity: state.identity,
 			store: state.store,
@@ -267,6 +278,7 @@ async function handleCommand(
 	state: RuntimeState,
 	ensureInitialized: (ctx: PiHistoryContext) => Promise<PiHistoryStore | undefined>,
 ): Promise<void> {
+	if (!isTui(ctx)) return;
 	const command = args.trim() || "status";
 	const store = await ensureInitialized(ctx);
 	if (command === "status") {
@@ -329,7 +341,7 @@ function handleRecordResult(
 }
 
 function buildStatusMessage(state: RuntimeState, store: PiHistoryStore | undefined): string {
-	if (!store || !state.identity) {
+	if (!store || !state.identity || !state.config) {
 		return state.lastError
 			? `pi-history unavailable: ${state.lastError}`
 			: "pi-history is not initialized";
@@ -380,6 +392,10 @@ function notifyOnce(
 function notify(ctx: PiHistoryContext, message: string, type: "info" | "warning" | "error"): void {
 	if (!canUseUi(ctx)) return;
 	ctx.ui.notify(message, type);
+}
+
+function isTui(ctx: PiHistoryContext): boolean {
+	return ctx.mode === "tui";
 }
 
 function canUseUi(ctx: PiHistoryContext): boolean {

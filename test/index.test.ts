@@ -33,6 +33,25 @@ import {
 import { testTheme } from "./theme-fixture.ts";
 
 const PROJECT_ROOT = "/workspace/project";
+const NON_TUI_MODES = ["rpc", "json", "print"] as const;
+type RuntimeMode = "tui" | (typeof NON_TUI_MODES)[number];
+
+test("config loading waits for TUI session start", async () => {
+	const fixture = createRuntimeFixture();
+	let configReads = 0;
+	fixture.install({
+		readConfig: () => {
+			configReads++;
+			return {};
+		},
+	});
+
+	assert.equal(configReads, 0);
+
+	await fixture.emitSessionStart();
+
+	assert.equal(configReads, 1);
+});
 
 test("global isolation resolves the global identity without git discovery", async () => {
 	const fixture = createRuntimeFixture({
@@ -123,15 +142,47 @@ test("interactive input records a prompt and continues", async () => {
 	assert.deepEqual(fixture.store.recorded, ["review the diff"]);
 });
 
-test("RPC input records when source is not extension", async () => {
-	const fixture = createRuntimeFixture();
-	fixture.install();
-	await fixture.emitSessionStart();
+for (const mode of NON_TUI_MODES) {
+	test(`${mode} mode keeps only static command metadata`, async () => {
+		const fixture = createRuntimeFixture({ mode });
+		let configReads = 0;
+		let identityResolutions = 0;
+		let storeLoads = 0;
+		const resolveIdentity = fixture.options.resolveIdentity;
+		const loadStore = fixture.options.loadStore;
+		assert.ok(resolveIdentity);
+		assert.ok(loadStore);
+		fixture.install({
+			readConfig: () => {
+				configReads++;
+				return {};
+			},
+			resolveIdentity: async (ctx) => {
+				identityResolutions++;
+				return resolveIdentity(ctx);
+			},
+			loadStore: async (input) => {
+				storeLoads++;
+				return loadStore(input);
+			},
+		});
 
-	await fixture.emitInput({ text: "follow up", source: "rpc" });
+		assert.equal(fixture.pi.commands.has("pi-history"), true);
 
-	assert.deepEqual(fixture.store.recorded, ["follow up"]);
-});
+		await fixture.emitSessionStart();
+		const result = await fixture.emitInput({ text: "private prompt", source: "rpc" });
+		await fixture.runCommand("status");
+		await fixture.runCommand("clear");
+
+		assert.deepEqual(result, { action: "continue" });
+		assert.equal(configReads, 0);
+		assert.equal(identityResolutions, 0);
+		assert.equal(storeLoads, 0);
+		assert.deepEqual(fixture.store.recorded, []);
+		assert.equal(fixture.store.clearCount, 0);
+		assert.equal(fixture.context.uiAccessCount, 0);
+	});
+}
 
 test("extension input and empty input are ignored", async () => {
 	const fixture = createRuntimeFixture();
@@ -178,32 +229,6 @@ test("blocked input capture warns once and continues", async () => {
 	assert.deepEqual(second, { action: "continue" });
 	assert.equal(notificationText(fixture.context).match(/write blocked/g)?.length, 1);
 	assert.doesNotMatch(notificationText(fixture.context), /alpha|beta/);
-});
-
-test("headless input capture never touches UI", async () => {
-	const fixture = createRuntimeFixture({ headless: true });
-	fixture.store.recordError = new Error("disk full");
-	fixture.install();
-
-	await fixture.emitSessionStart();
-	const result = await fixture.emitInput({
-		text: "save me",
-		source: "interactive",
-	});
-
-	assert.deepEqual(result, { action: "continue" });
-	assert.equal(fixture.store.recorded.length, 0);
-});
-
-test("headless commands do not touch UI or clear without confirmation", async () => {
-	const fixture = createRuntimeFixture({ headless: true });
-	fixture.install();
-	await fixture.emitSessionStart();
-
-	await fixture.runCommand("status");
-	await fixture.runCommand("clear");
-
-	assert.equal(fixture.store.clearCount, 0);
 });
 
 test("status reports project metadata without prompt contents", async () => {
@@ -271,8 +296,8 @@ function notificationText(context: FakeContext): string {
 type RuntimeFixtureOptions = {
 	confirmResult?: boolean;
 	configMaxEntries?: number;
-	headless?: boolean;
 	isolationLevel?: IsolationLevel;
+	mode?: RuntimeMode;
 };
 
 type RuntimeFixture = {
@@ -303,7 +328,7 @@ function createRuntimeFixture(options: RuntimeFixtureOptions = {}): RuntimeFixtu
 		historyBaseDir: "/private/history",
 	});
 	const store = new FakeStore(identity.historyFilePath, PROJECT_ROOT);
-	const context = new FakeContext(options.confirmResult ?? true, options.headless ?? false);
+	const context = new FakeContext(options.confirmResult ?? true, options.mode ?? "tui");
 	const pi = new FakePi();
 	const fixtureOptions: RuntimeInstallOptions = {
 		config: buildFixtureConfig(options),
@@ -407,38 +432,35 @@ class FakeContext implements PiHistoryContext {
 	cwd = PROJECT_ROOT;
 	editorFactory: EditorFactory | undefined;
 	hasUI: boolean;
+	uiAccessCount = 0;
 
 	constructor(
 		private readonly confirmResult: boolean,
-		headless: boolean,
+		readonly mode: RuntimeMode,
 	) {
-		this.hasUI = !headless;
+		this.hasUI = mode === "tui" || mode === "rpc";
 	}
 
 	ui = {
 		notify: (message: string, type?: "info" | "warning" | "error") => {
-			this.assertUiAvailable();
+			this.uiAccessCount++;
 			this.notifications.push({ message, type });
 		},
 		confirm: async (_title: string, message: string) => {
-			this.assertUiAvailable();
+			this.uiAccessCount++;
 			this.confirmMessages.push(message);
 			return this.confirmResult;
 		},
 		theme: testTheme,
 		getEditorComponent: () => {
-			this.assertUiAvailable();
+			this.uiAccessCount++;
 			return undefined;
 		},
 		setEditorComponent: (factory: EditorFactory | undefined) => {
-			this.assertUiAvailable();
+			this.uiAccessCount++;
 			this.editorFactory = factory;
 		},
 	};
-
-	private assertUiAvailable(): void {
-		if (!this.hasUI) throw new Error("UI should not be touched in headless mode");
-	}
 }
 
 class FakePi implements PiHistoryApi {
