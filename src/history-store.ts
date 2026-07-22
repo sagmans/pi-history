@@ -159,7 +159,7 @@ export class HistoryStore {
 	}
 
 	async clear(): Promise<ClearHistoryResult> {
-		const existingBlock = blockClear(this.blockReason, this.blockWarnings);
+		const existingBlock = clearBlockResult(this.blockReason, this.blockWarnings);
 		if (existingBlock) return existingBlock;
 
 		return withHistoryFileLock(this.identity.historyFilePath, async () => {
@@ -170,7 +170,7 @@ export class HistoryStore {
 				now: () => timestamp,
 			});
 			if (latest.kind === "blocked") {
-				const latestBlock = blockClear(latest.reason, latest.warnings);
+				const latestBlock = clearBlockResult(latest.reason, latest.warnings);
 				if (latestBlock) {
 					this.applyBlocked(latest);
 					return latestBlock;
@@ -230,21 +230,27 @@ export async function loadHistoryFile(input: {
 	}
 
 	const parsed = parseHistoryText(text);
-	if (parsed.kind === "unsupported_schema") {
-		return blockedHistory({
-			identity: input.identity,
-			now: now(),
-			reason: "unsupported_schema",
-			warning: "history schema is unsupported; mutations blocked",
-		});
-	}
-	if (parsed.kind === "corrupt") {
-		return blockedHistory({
-			identity: input.identity,
-			now: now(),
-			reason: "corrupt_history",
-			warning: "history file is corrupt; writes blocked",
-		});
+	switch (parsed.kind) {
+		case "unsupported_schema":
+			return blockedHistory({
+				identity: input.identity,
+				now: now(),
+				reason: "unsupported_schema",
+				warning: "history schema is unsupported; mutations blocked",
+			});
+		case "corrupt":
+			return blockedHistory({
+				identity: input.identity,
+				now: now(),
+				reason: "corrupt_history",
+				warning: "history file is corrupt; writes blocked",
+			});
+		case "ready":
+			break;
+		default: {
+			const exhaustive: never = parsed;
+			return exhaustive;
+		}
 	}
 
 	const validation = validateStoredProjectRoot({
@@ -355,9 +361,9 @@ function mergeEntry(existing: HistoryEntry | undefined, next: HistoryEntry): His
 }
 
 type ParsedHistoryText =
-	| { kind: "ready"; history: PromptHistoryFile }
-	| { kind: "corrupt" }
-	| { kind: "unsupported_schema" };
+	| Readonly<{ kind: "ready"; history: PromptHistoryFile }>
+	| Readonly<{ kind: "corrupt" }>
+	| Readonly<{ kind: "unsupported_schema" }>;
 
 function parseHistoryText(text: string): ParsedHistoryText {
 	let raw: unknown;
@@ -558,7 +564,7 @@ function lockOwnerIsActive(owner: HistoryLockOwner): boolean {
 	}
 }
 
-function blockClear(
+function clearBlockResult(
 	reason: HistoryBlockReason | undefined,
 	warnings: string[],
 ): Extract<ClearHistoryResult, { kind: "blocked" }> | undefined {
