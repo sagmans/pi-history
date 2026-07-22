@@ -3,6 +3,7 @@ import { hostname } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import type { BlockReason } from "./block-reason.ts";
 import { hasErrorCode, isPositiveInteger, isRecord } from "./guards.ts";
 import {
 	PRIVATE_DIR_MODE,
@@ -40,7 +41,9 @@ export type HistoryLockOwner = {
 	createdAt: string;
 };
 
-export type HistoryBlockReason = "corrupt_history" | "unsupported_schema" | "project_root_mismatch";
+// Re-exported under the storage-facing name so callers depend on storage
+// vocabulary while the canonical union lives in one place.
+export type HistoryBlockReason = BlockReason;
 
 type ClearHistoryBlockReason = Exclude<HistoryBlockReason, "corrupt_history">;
 
@@ -114,6 +117,9 @@ export class HistoryStore {
 
 	async recordPrompt(text: string): Promise<RecordPromptResult> {
 		if (text.trim().length === 0) return { kind: "skipped", reason: "empty" };
+		// A session blocked at load time returns from memory instead of re-reading
+		// under the lock on every input: the file is unlikely to self-heal
+		// mid-session, and the next session start restores freshness.
 		if (this.blockReason) {
 			return {
 				kind: "blocked",
@@ -159,6 +165,9 @@ export class HistoryStore {
 	}
 
 	async clear(): Promise<ClearHistoryResult> {
+		// Same stale-safe short-circuit as recordPrompt: a blocked clear returns
+		// from memory; the under-lock revalidation below catches a file that
+		// became blocked after this session loaded ready.
 		const existingBlock = clearBlockResult(this.blockReason, this.blockWarnings);
 		if (existingBlock) return existingBlock;
 
@@ -326,8 +335,12 @@ function mergeHistories(input: {
 			byText.set(entry.text, mergeEntry(byText.get(entry.text), entry));
 		}
 	}
+	// Relational comparison keeps timestamp ordering locale-independent and
+	// consistent with earlierTimestamp/laterTimestamp; newest updatedAt first.
 	const entries = [...byText.values()]
-		.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+		.sort((left, right) =>
+			left.updatedAt > right.updatedAt ? -1 : left.updatedAt < right.updatedAt ? 1 : 0,
+		)
 		.slice(0, input.maxEntries);
 	return withOptionalClearMarker(
 		{

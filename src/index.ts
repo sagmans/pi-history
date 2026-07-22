@@ -456,15 +456,19 @@ function buildDiagnosticSnapshot(
 			? IsolationLevel.Global
 			: IsolationLevel.Project;
 	if (store.writeBlocked) {
-		// HistoryStore guarantees a bounded reason whenever writeBlocked is true.
-		return createDiagnosticSnapshot({
-			initialization: "ready",
-			storage: "write_blocked",
-			storageReason: store.writeBlockedReason as HistoryBlockReason,
-			...state.editor,
-			cap: state.config.maxEntries,
-			scope,
-		});
+		const blockReason = store.writeBlockedReason;
+		// writeBlocked is true only when the store set a bounded reason; the guard
+		// narrows undefined out for the diagnostic contract without a cast.
+		if (blockReason) {
+			return createDiagnosticSnapshot({
+				initialization: "ready",
+				storage: "write_blocked",
+				storageReason: blockReason,
+				...state.editor,
+				cap: state.config.maxEntries,
+				scope,
+			});
+		}
 	}
 	if (state.storageDegradationReason) {
 		return createDiagnosticSnapshot({

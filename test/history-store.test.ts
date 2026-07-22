@@ -237,6 +237,105 @@ test("clear revalidates a newly unsupported schema before replacement", async ()
 	});
 });
 
+test("record revalidates a newly unsupported schema before recording", async () => {
+	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
+		const store = await loadStore();
+		const replacement = serializeHistory({
+			schemaVersion: UNSUPPORTED_SCHEMA_VERSION,
+			projectRoot,
+			createdAt: FIXTURE_TIMESTAMP,
+			updatedAt: FIXTURE_TIMESTAMP,
+			entries: [
+				{
+					text: "synthetic future prompt",
+					createdAt: FIXTURE_TIMESTAMP,
+					updatedAt: FIXTURE_TIMESTAMP,
+					useCount: 1,
+				},
+			],
+		});
+		mkdirSync(path.dirname(storePath), { recursive: true });
+		writeFileSync(storePath, replacement, "utf8");
+
+		const recordResult = await store.recordPrompt("new synthetic prompt");
+
+		assert.equal(recordResult.kind, "blocked");
+		if (recordResult.kind === "blocked") {
+			assert.equal(recordResult.reason, "unsupported_schema");
+		}
+		assert.equal(store.writeBlockedReason, "unsupported_schema");
+		assert.equal(readFileSync(storePath, "utf8"), replacement);
+	});
+});
+
+test("record revalidates a newly foreign project root before recording", async () => {
+	await withStoreFixture(async ({ storePath, loadStore }) => {
+		const store = await loadStore();
+		const foreign: PromptHistoryFile = {
+			schemaVersion: HISTORY_SCHEMA_VERSION,
+			projectRoot: "/other/project",
+			createdAt: FIXTURE_TIMESTAMP,
+			updatedAt: FIXTURE_TIMESTAMP,
+			entries: [],
+		};
+		mkdirSync(path.dirname(storePath), { recursive: true });
+		writeFileSync(storePath, `${JSON.stringify(foreign)}\n`, "utf8");
+
+		const recordResult = await store.recordPrompt("alpha");
+
+		assert.equal(recordResult.kind, "blocked");
+		if (recordResult.kind === "blocked") {
+			assert.equal(recordResult.reason, "project_root_mismatch");
+		}
+		assert.equal(store.writeBlockedReason, "project_root_mismatch");
+		assert.equal(JSON.parse(readFileSync(storePath, "utf8")).projectRoot, "/other/project");
+	});
+});
+
+test("clear revalidates a newly foreign project root before replacement", async () => {
+	await withStoreFixture(async ({ storePath, loadStore }) => {
+		const store = await loadStore();
+		const foreign: PromptHistoryFile = {
+			schemaVersion: HISTORY_SCHEMA_VERSION,
+			projectRoot: "/other/project",
+			createdAt: FIXTURE_TIMESTAMP,
+			updatedAt: FIXTURE_TIMESTAMP,
+			entries: [],
+		};
+		mkdirSync(path.dirname(storePath), { recursive: true });
+		writeFileSync(storePath, `${JSON.stringify(foreign)}\n`, "utf8");
+
+		const clearResult = await store.clear();
+
+		assert.equal(clearResult.kind, "blocked");
+		if (clearResult.kind === "blocked") {
+			assert.equal(clearResult.reason, "project_root_mismatch");
+		}
+		assert.equal(store.writeBlockedReason, "project_root_mismatch");
+		assert.equal(JSON.parse(readFileSync(storePath, "utf8")).projectRoot, "/other/project");
+	});
+});
+
+test("empty prompt skips before an existing block is reported", async () => {
+	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
+		const original = serializeHistory({
+			schemaVersion: UNSUPPORTED_SCHEMA_VERSION,
+			projectRoot,
+			createdAt: FIXTURE_TIMESTAMP,
+			updatedAt: FIXTURE_TIMESTAMP,
+			entries: [],
+		});
+		mkdirSync(path.dirname(storePath), { recursive: true });
+		writeFileSync(storePath, original, "utf8");
+
+		const store = await loadStore();
+		assert.equal(store.writeBlocked, true);
+		const result = await store.recordPrompt("   ");
+
+		assert.deepEqual(result, { kind: "skipped", reason: "empty" });
+	});
+});
+
 for (const invalidSchema of INVALID_SCHEMA_VERSIONS) {
 	test(`${invalidSchema.label} schema version remains recoverable corruption`, async () => {
 		await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
