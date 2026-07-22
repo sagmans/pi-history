@@ -7,6 +7,16 @@ const FIELD_SEPARATOR = "; ";
 export type DiagnosticScope = "project" | "global";
 export type StorageBlockReason = "corrupt_history" | "project_root_mismatch";
 export type StorageDegradationReason = "record_failed" | "clear_failed";
+export type GhostDegradationReason =
+	| "missing_lines"
+	| "missing_cursor"
+	| "missing_insertion"
+	| "missing_render_seam";
+
+export type EditorDiagnosticState =
+	| Readonly<{ editor: "ready" }>
+	| Readonly<{ editor: "degraded"; editorReason: GhostDegradationReason }>
+	| Readonly<{ editor: "unavailable"; editorReason: "missing_editor_hooks" }>;
 
 export type HealthyDiagnosticSnapshot = Readonly<{
 	state: "healthy";
@@ -61,12 +71,24 @@ type StorageDegradedDiagnosticSnapshot = Readonly<{
 	scope: DiagnosticScope;
 }>;
 
+type EditorDegradedDiagnosticSnapshot = Readonly<
+	{
+		state: "editor_degraded";
+		initialization: "ready";
+		storage: "ready";
+		entries: number;
+		cap: number;
+		scope: DiagnosticScope;
+	} & Exclude<EditorDiagnosticState, { editor: "ready" }>
+>;
+
 export type DiagnosticSnapshot =
 	| HealthyDiagnosticSnapshot
 	| ConfigurationLoadFailureSnapshot
 	| ScopedInitializationFailureSnapshot
 	| WriteBlockedDiagnosticSnapshot
-	| StorageDegradedDiagnosticSnapshot;
+	| StorageDegradedDiagnosticSnapshot
+	| EditorDegradedDiagnosticSnapshot;
 
 export function formatDiagnostic(snapshot: DiagnosticSnapshot): string {
 	// Field order is compatibility-sensitive so agents can compare lines without parsing prose.
@@ -83,7 +105,10 @@ export function formatDiagnostic(snapshot: DiagnosticSnapshot): string {
 		fields.push(`storageReason=${snapshot.storageReason}`);
 	}
 	fields.push(`editor=${snapshot.editor}`);
-	if (snapshot.state === "healthy") fields.push(`entries=${snapshot.entries}`);
+	if (snapshot.state === "editor_degraded") {
+		fields.push(`editorReason=${snapshot.editorReason}`);
+	}
+	if (snapshot.storage === "ready") fields.push(`entries=${snapshot.entries}`);
 	if ("cap" in snapshot) fields.push(`cap=${snapshot.cap}`, `scope=${snapshot.scope}`);
 	return `${DIAGNOSTIC_PREFIX}${fields.join(FIELD_SEPARATOR)}`;
 }

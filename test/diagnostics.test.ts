@@ -102,3 +102,44 @@ for (const storageReason of ["record_failed", "clear_failed"] as const) {
 		);
 	});
 }
+
+test("missing editor hooks report unavailable integration", () => {
+	const snapshot: DiagnosticSnapshot = {
+		state: "editor_degraded",
+		initialization: "ready",
+		storage: "ready",
+		editor: "unavailable",
+		editorReason: "missing_editor_hooks",
+		entries: 12,
+		cap: 2000,
+		scope: "project",
+	};
+	assert.equal(
+		formatDiagnostic(snapshot),
+		"pi-history: diagnosticsVersion=1; state=editor_degraded; initialization=ready; storage=ready; editor=unavailable; editorReason=missing_editor_hooks; entries=12; cap=2000; scope=project",
+	);
+});
+
+for (const editorReason of [
+	"missing_lines",
+	"missing_cursor",
+	"missing_insertion",
+	"missing_render_seam",
+] as const) {
+	test(`${editorReason} diagnostic reports ghost-only degradation`, () => {
+		const snapshot: DiagnosticSnapshot = {
+			state: "editor_degraded",
+			initialization: "ready",
+			storage: "ready",
+			editor: "degraded",
+			editorReason,
+			entries: 12,
+			cap: 2000,
+			scope: "project",
+		};
+		assert.equal(
+			formatDiagnostic(snapshot),
+			`pi-history: diagnosticsVersion=1; state=editor_degraded; initialization=ready; storage=ready; editor=degraded; editorReason=${editorReason}; entries=12; cap=2000; scope=project`,
+		);
+	});
+}

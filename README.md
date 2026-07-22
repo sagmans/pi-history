@@ -113,6 +113,21 @@ Storage-degraded status uses warning severity and omits `entries`. A later
 successful record or clear restores storage readiness; persistent write blocking
 takes precedence over transient degradation.
 
+Editor integration uses `state=editor_degraded`. Missing Pi editor hooks report
+`editor=unavailable`, `editorReason=missing_editor_hooks`, and warning severity;
+both reverse search and ghost completion are absent. Ghost-only degradation
+reports `editor=degraded`, information severity, and one primary reason while
+keeping `Ctrl+R` available:
+
+- `missing_lines`
+- `missing_cursor`
+- `missing_insertion`
+- `missing_render_seam`
+
+Priority follows that list when multiple capabilities are missing. Editor
+readiness means no degradation has been observed; status does not probe the
+editor.
+
 Share only a `pi-history:` line containing `diagnosticsVersion=1`. Versioned
 diagnostics omit prompt text, raw errors, and exact filesystem paths.
 Surrounding warnings and terminal output are local operational notices, not

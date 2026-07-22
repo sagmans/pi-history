@@ -18,6 +18,7 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 
+import type { GhostDegradationReason } from "./diagnostics.ts";
 import type { HistoryEntry } from "./history-store.ts";
 import {
 	type EditorCursor,
@@ -63,7 +64,7 @@ export type HistoryEditorOptions = {
 	getEntries: () => readonly HistoryEntry[];
 	getSearchMatchColorSgr: () => string;
 	getSearchSelectedColorSgr: () => string;
-	onGhostUnavailable?: (reason: string) => void;
+	onGhostUnavailable?: (reason: GhostDegradationReason) => void;
 	searchLimit?: number;
 };
 
@@ -93,7 +94,7 @@ type SearchState = {
 export class HistoryEditor extends CustomEditor {
 	private searchState: SearchState | undefined;
 	private selectList: SelectList | undefined;
-	private ghostDisabledReason: string | undefined;
+	private ghostDisabledReason: GhostDegradationReason | undefined;
 	private ghostUnavailableNotified = false;
 	private readonly editorTheme: EditorTheme;
 
@@ -346,7 +347,7 @@ export class HistoryEditor extends CustomEditor {
 	): { index: number; line: string; cursorStart: number } | undefined {
 		const index = lines.findIndex((line) => line.includes(CURSOR_AT_END_RENDER));
 		if (index < 0) {
-			this.disableGhost("wrapped editor has no safe ghost render seam");
+			this.disableGhost("missing_render_seam");
 			return undefined;
 		}
 		const line = lines[index];
@@ -359,7 +360,7 @@ export class HistoryEditor extends CustomEditor {
 			: undefined;
 	}
 
-	private disableGhost(reason: string): void {
+	private disableGhost(reason: GhostDegradationReason): void {
 		this.ghostDisabledReason = reason;
 		if (this.ghostUnavailableNotified) return;
 		this.ghostUnavailableNotified = true;
@@ -445,12 +446,12 @@ export class HistoryEditor extends CustomEditor {
 	}
 }
 
-function missingGhostMethodReason(editor: WrappedHistoryEditor): string | undefined {
-	if (typeof editor.getLines !== "function") return "wrapped editor does not expose lines";
-	if (typeof editor.getCursor !== "function") return "wrapped editor does not expose cursor";
-	if (typeof editor.insertTextAtCursor !== "function") {
-		return "wrapped editor cannot accept ghost text";
-	}
+function missingGhostMethodReason(
+	editor: WrappedHistoryEditor,
+): GhostDegradationReason | undefined {
+	if (typeof editor.getLines !== "function") return "missing_lines";
+	if (typeof editor.getCursor !== "function") return "missing_cursor";
+	if (typeof editor.insertTextAtCursor !== "function") return "missing_insertion";
 	return undefined;
 }
 

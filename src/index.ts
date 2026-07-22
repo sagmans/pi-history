@@ -15,7 +15,9 @@ import {
 	type PiHistoryConfig,
 } from "./config.ts";
 import {
+	type EditorDiagnosticState,
 	formatDiagnostic,
+	type GhostDegradationReason,
 	type InitializationFailureReason,
 	type StorageDegradationReason,
 } from "./diagnostics.ts";
@@ -114,6 +116,7 @@ export type RuntimeStateSnapshot = {
 	lastError: string | undefined;
 	initializationFailureReason: InitializationFailureReason | undefined;
 	storageDegradationReason: StorageDegradationReason | undefined;
+	editor: EditorDiagnosticState;
 };
 
 type RuntimeState = {
@@ -124,6 +127,7 @@ type RuntimeState = {
 	lastError: string | undefined;
 	initializationFailureReason: InitializationFailureReason | undefined;
 	storageDegradationReason: StorageDegradationReason | undefined;
+	editor: EditorDiagnosticState;
 	notifiedKeys: Set<string>;
 	editorInstalled: boolean;
 };
@@ -140,6 +144,7 @@ export function installPiHistoryForTest(
 		lastError: undefined,
 		initializationFailureReason: undefined,
 		storageDegradationReason: undefined,
+		editor: { editor: "ready" },
 		notifiedKeys: new Set(),
 		editorInstalled: false,
 	};
@@ -234,6 +239,7 @@ export function installPiHistoryForTest(
 			lastError: state.lastError,
 			initializationFailureReason: state.initializationFailureReason,
 			storageDegradationReason: state.storageDegradationReason,
+			editor: state.editor,
 		}),
 	};
 }
@@ -244,11 +250,21 @@ export function shouldCaptureInput(event: Pick<InputEvent, "source" | "text">): 
 
 function installEditorWrapper(ctx: PiHistoryContext, state: RuntimeState): void {
 	if (state.editorInstalled) return;
-	if (ctx.hasUI === false) return;
 	const getEditorComponent = ctx.ui.getEditorComponent;
 	const setEditorComponent = ctx.ui.setEditorComponent;
-	if (!getEditorComponent || !setEditorComponent) return;
+	if (ctx.hasUI === false || !getEditorComponent || !setEditorComponent) {
+		state.editor = { editor: "unavailable", editorReason: "missing_editor_hooks" };
+		notifyOnce(
+			ctx,
+			state,
+			"editor:missing_editor_hooks",
+			"pi-history editor integration unavailable: missing editor hooks; Ctrl+R and ghost completion disabled",
+			"warning",
+		);
+		return;
+	}
 
+	state.editor = { editor: "ready" };
 	const previousFactory = getEditorComponent();
 	setEditorComponent((tui, theme, keybindings) => {
 		const inner = previousFactory
@@ -259,11 +275,12 @@ function installEditorWrapper(ctx: PiHistoryContext, state: RuntimeState): void 
 			getSearchMatchColorSgr: () => ctx.ui.theme.getFgAnsi("mdCode"),
 			getSearchSelectedColorSgr: () => ctx.ui.theme.getFgAnsi("accent"),
 			onGhostUnavailable: (reason) => {
+				state.editor = { editor: "degraded", editorReason: reason };
 				notifyOnce(
 					ctx,
 					state,
 					`ghost:${reason}`,
-					`pi-history ghost completion disabled: ${reason}; Ctrl+R reverse search remains available`,
+					`pi-history ghost completion disabled: ${ghostDegradationMessage(reason)}; Ctrl+R reverse search remains available`,
 					"info",
 				);
 			},
@@ -305,7 +322,8 @@ async function handleCommand(
 			buildStatusMessage(state, state.store),
 			state.store?.writeBlocked ||
 				state.initializationFailureReason ||
-				state.storageDegradationReason
+				state.storageDegradationReason ||
+				state.editor.editor === "unavailable"
 				? "warning"
 				: "info",
 		);
@@ -457,6 +475,21 @@ function buildStatusMessage(state: RuntimeState, store: PiHistoryStore | undefin
 					: IsolationLevel.Project,
 		});
 	}
+	const scope =
+		state.identity.isolationLevel === IsolationLevel.Global
+			? IsolationLevel.Global
+			: IsolationLevel.Project;
+	if (state.editor.editor !== "ready") {
+		return formatDiagnostic({
+			state: "editor_degraded",
+			initialization: "ready",
+			storage: "ready",
+			...state.editor,
+			entries: store.entryCount,
+			cap: state.config.maxEntries,
+			scope,
+		});
+	}
 	return formatDiagnostic({
 		state: "healthy",
 		initialization: "ready",
@@ -464,11 +497,25 @@ function buildStatusMessage(state: RuntimeState, store: PiHistoryStore | undefin
 		editor: "ready",
 		entries: store.entryCount,
 		cap: state.config.maxEntries,
-		scope:
-			state.identity.isolationLevel === IsolationLevel.Global
-				? IsolationLevel.Global
-				: IsolationLevel.Project,
+		scope,
 	});
+}
+
+function ghostDegradationMessage(reason: GhostDegradationReason): string {
+	switch (reason) {
+		case "missing_lines":
+			return "wrapped editor does not expose lines";
+		case "missing_cursor":
+			return "wrapped editor does not expose cursor";
+		case "missing_insertion":
+			return "wrapped editor cannot accept ghost text";
+		case "missing_render_seam":
+			return "wrapped editor has no safe ghost render seam";
+		default: {
+			const exhaustive: never = reason;
+			return exhaustive;
+		}
+	}
 }
 
 function notifyConfigWarnings(ctx: PiHistoryContext, state: RuntimeState): void {

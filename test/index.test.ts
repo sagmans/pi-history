@@ -7,6 +7,7 @@ import type {
 	InputEvent,
 	InputEventResult,
 } from "@earendil-works/pi-coding-agent";
+import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import {
 	type EditorFactory,
 	installPiHistoryForTest,
@@ -18,6 +19,7 @@ import {
 	shouldCaptureInput,
 } from "../index.ts";
 import { IsolationLevel, type PiHistoryConfig } from "../src/config.ts";
+import type { WrappedHistoryEditor } from "../src/history-editor.ts";
 import type {
 	ClearHistoryResult,
 	HistoryBlockReason,
@@ -494,8 +496,93 @@ test("session start installs editor wrapper when editor UI is available", async 
 	assert.equal(typeof fixture.context.editorFactory, "function");
 });
 
+test("missing editor hooks report unavailable integration with warning severity", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.context.ui.getEditorComponent = undefined;
+	fixture.context.ui.setEditorComponent = undefined;
+	fixture.install();
+	await fixture.emitSessionStart();
+
+	await fixture.runCommand("status");
+
+	assert.match(
+		notificationText(fixture.context),
+		/editor integration unavailable: missing editor hooks/,
+	);
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=1; state=editor_degraded; initialization=ready; storage=ready; editor=unavailable; editorReason=missing_editor_hooks; entries=0; cap=500; scope=project",
+		type: "warning",
+	});
+});
+
+for (const { editorReason, missingMethod, notice } of [
+	{
+		editorReason: "missing_lines",
+		missingMethod: "getLines",
+		notice: "wrapped editor does not expose lines",
+	},
+	{
+		editorReason: "missing_cursor",
+		missingMethod: "getCursor",
+		notice: "wrapped editor does not expose cursor",
+	},
+	{
+		editorReason: "missing_insertion",
+		missingMethod: "insertTextAtCursor",
+		notice: "wrapped editor cannot accept ghost text",
+	},
+	{
+		editorReason: "missing_render_seam",
+		missingMethod: undefined,
+		notice: "wrapped editor has no safe ghost render seam",
+	},
+] as const) {
+	test(`${editorReason} reports ghost degradation with information severity`, async () => {
+		const fixture = createRuntimeFixture();
+		fixture.store.entriesSnapshot = [entry("review the diff")];
+		const inner = new RuntimeEditor("review the", editorReason !== "missing_render_seam");
+		if (missingMethod) Object.defineProperty(inner, missingMethod, { value: undefined });
+		fixture.context.editorFactory = () => inner;
+		fixture.install();
+		await fixture.emitSessionStart();
+
+		instantiateInstalledEditor(fixture.context).render(80);
+		await fixture.runCommand("status");
+
+		assert.match(notificationText(fixture.context), new RegExp(notice));
+		assert.deepEqual(fixture.context.notifications.at(-1), {
+			message: `pi-history: diagnosticsVersion=1; state=editor_degraded; initialization=ready; storage=ready; editor=degraded; editorReason=${editorReason}; entries=1; cap=500; scope=project`,
+			type: "info",
+		});
+	});
+}
+
+test("editor status stays ready until degradation is observed", async () => {
+	const fixture = createRuntimeFixture();
+	const inner = new RuntimeEditor("");
+	Object.defineProperty(inner, "getLines", { value: undefined });
+	fixture.context.editorFactory = () => inner;
+	fixture.install();
+	await fixture.emitSessionStart();
+
+	await fixture.runCommand("status");
+
+	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /editor=ready/);
+});
+
 function notificationText(context: FakeContext): string {
 	return context.notifications.map((notification) => notification.message).join("\n");
+}
+
+function instantiateInstalledEditor(context: FakeContext): WrappedHistoryEditor {
+	const factory = context.editorFactory;
+	assert.ok(factory, "editor wrapper should be installed");
+	return factory(
+		{ terminal: { rows: 24 }, requestRender: () => {} } as never,
+		testTheme as never,
+		new KeybindingsManager(TUI_KEYBINDINGS) as never,
+	) as WrappedHistoryEditor;
 }
 
 type RuntimeFixtureOptions = {
@@ -648,7 +735,7 @@ class FakeContext implements PiHistoryContext {
 		this.hasUI = mode === "tui" || mode === "rpc";
 	}
 
-	ui = {
+	ui: PiHistoryContext["ui"] = {
 		notify: (message: string, type?: "info" | "warning" | "error") => {
 			this.uiAccessCount++;
 			this.notifications.push({ message, type });
@@ -661,13 +748,60 @@ class FakeContext implements PiHistoryContext {
 		theme: testTheme,
 		getEditorComponent: () => {
 			this.uiAccessCount++;
-			return undefined;
+			return this.editorFactory;
 		},
 		setEditorComponent: (factory: EditorFactory | undefined) => {
 			this.uiAccessCount++;
 			this.editorFactory = factory;
 		},
 	};
+}
+
+class RuntimeEditor implements WrappedHistoryEditor {
+	handled: string[] = [];
+	focused = false;
+	onSubmit?: (text: string) => void;
+	onChange?: (text: string) => void;
+	disableSubmit = false;
+	borderColor?: (text: string) => string;
+
+	constructor(
+		private text: string,
+		private readonly renderCursor = true,
+	) {}
+
+	render(width: number): string[] {
+		const cursor = this.renderCursor ? "\x1b[7m \x1b[0m" : "";
+		return [`${this.text}${cursor}`.padEnd(width, " ")];
+	}
+
+	handleInput(data: string): void {
+		this.handled.push(data);
+	}
+
+	invalidate(): void {}
+
+	getText(): string {
+		return this.text;
+	}
+
+	setText(text: string): void {
+		this.text = text;
+	}
+
+	insertTextAtCursor(text: string): void {
+		this.text += text;
+	}
+
+	getLines(): string[] {
+		return this.text.split("\n");
+	}
+
+	getCursor(): { line: number; col: number } {
+		const lines = this.getLines();
+		const line = lines.length - 1;
+		return { line, col: lines[line]?.length ?? 0 };
+	}
 }
 
 class FakePi implements PiHistoryApi {
