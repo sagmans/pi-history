@@ -174,13 +174,16 @@ npm run check       # biome lint + format
 npm run check:fix   # apply biome fixes
 npm run typecheck
 npm run test
-npm run verify      # deterministic offline checks
-npm run audit       # network-dependent high-severity dependency gate
-npm run verify:ci   # complete maintainer and CI gate
+npm run verify       # deterministic offline checks
+npm run audit        # network-dependent high-severity dependency gate
+npm run verify:ci    # complete maintainer and CI gate
+npm run smoke:herdr  # disposable real-TUI smoke; Herdr maintainers only
 ```
 
 `npm run verify:ci` is the authoritative maintainer gate and runs in every CI
-matrix leg. `npm run verify` is its deterministic offline subset. The audit
+matrix leg. `npm run verify` is its deterministic offline subset. The Herdr
+smoke remains outside CI; see [`docs/maintainer-smoke.md`](docs/maintainer-smoke.md).
+The audit
 currently reports moderate `GHSA-j3f2-48v5-ccww` in the dev-only `protobufjs`
 copy nested under pi; reassess it with every pi dependency update.
 
