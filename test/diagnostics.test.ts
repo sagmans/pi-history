@@ -66,3 +66,21 @@ for (const { snapshot, expected } of INITIALIZATION_FAILURE_CASES) {
 		assert.equal(formatDiagnostic(snapshot), expected);
 	});
 }
+
+for (const storageReason of ["corrupt_history", "project_root_mismatch"] as const) {
+	test(`${storageReason} diagnostic reports safe write blocking`, () => {
+		const snapshot: DiagnosticSnapshot = {
+			state: "write_blocked",
+			initialization: "ready",
+			storage: "write_blocked",
+			storageReason,
+			editor: "ready",
+			cap: 2000,
+			scope: "project",
+		};
+		assert.equal(
+			formatDiagnostic(snapshot),
+			`pi-history: diagnosticsVersion=1; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=${storageReason}; editor=ready; cap=2000; scope=project`,
+		);
+	});
+}

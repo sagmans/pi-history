@@ -5,6 +5,7 @@ const DIAGNOSTIC_PREFIX = "pi-history: ";
 const FIELD_SEPARATOR = "; ";
 
 export type DiagnosticScope = "project" | "global";
+export type StorageBlockReason = "corrupt_history" | "project_root_mismatch";
 
 export type HealthyDiagnosticSnapshot = Readonly<{
 	state: "healthy";
@@ -39,10 +40,21 @@ type ScopedInitializationFailureSnapshot = Readonly<{
 	scope: DiagnosticScope;
 }>;
 
+type WriteBlockedDiagnosticSnapshot = Readonly<{
+	state: "write_blocked";
+	initialization: "ready";
+	storage: "write_blocked";
+	storageReason: StorageBlockReason;
+	editor: "ready";
+	cap: number;
+	scope: DiagnosticScope;
+}>;
+
 export type DiagnosticSnapshot =
 	| HealthyDiagnosticSnapshot
 	| ConfigurationLoadFailureSnapshot
-	| ScopedInitializationFailureSnapshot;
+	| ScopedInitializationFailureSnapshot
+	| WriteBlockedDiagnosticSnapshot;
 
 export function formatDiagnostic(snapshot: DiagnosticSnapshot): string {
 	// Field order is compatibility-sensitive so agents can compare lines without parsing prose.
@@ -54,7 +66,11 @@ export function formatDiagnostic(snapshot: DiagnosticSnapshot): string {
 	if (snapshot.state === "initialization_failed") {
 		fields.push(`initializationReason=${snapshot.initializationReason}`);
 	}
-	fields.push(`storage=${snapshot.storage}`, `editor=${snapshot.editor}`);
+	fields.push(`storage=${snapshot.storage}`);
+	if (snapshot.state === "write_blocked") {
+		fields.push(`storageReason=${snapshot.storageReason}`);
+	}
+	fields.push(`editor=${snapshot.editor}`);
 	if (snapshot.state === "healthy") fields.push(`entries=${snapshot.entries}`);
 	if ("cap" in snapshot) fields.push(`cap=${snapshot.cap}`, `scope=${snapshot.scope}`);
 	return `${DIAGNOSTIC_PREFIX}${fields.join(FIELD_SEPARATOR)}`;

@@ -403,16 +403,20 @@ function buildStatusMessage(state: RuntimeState, store: PiHistoryStore | undefin
 			: "pi-history is not initialized";
 	}
 	if (store.writeBlocked) {
-		const scope =
-			state.identity.isolationLevel === IsolationLevel.Global
-				? "scope=global"
-				: `project=${state.identity.projectRoot}`;
-		return [
-			`pi-history: entries=${store.entryCount}`,
-			`cap=${state.config.maxEntries}`,
-			scope,
-			`file=${store.historyFilePath}; writeBlocked=${store.writeBlockedReason ?? "unknown"}`,
-		].join("; ");
+		// HistoryStore guarantees a bounded reason whenever writeBlocked is true.
+		const storageReason = store.writeBlockedReason as HistoryBlockReason;
+		return formatDiagnostic({
+			state: "write_blocked",
+			initialization: "ready",
+			storage: "write_blocked",
+			storageReason,
+			editor: "ready",
+			cap: state.config.maxEntries,
+			scope:
+				state.identity.isolationLevel === IsolationLevel.Global
+					? IsolationLevel.Global
+					: IsolationLevel.Project,
+		});
 	}
 	return formatDiagnostic({
 		state: "healthy",

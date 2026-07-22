@@ -351,22 +351,22 @@ test("healthy project status omits private data without mutating runtime state",
 	});
 });
 
-test("status reports project metadata without prompt contents", async () => {
-	const fixture = createRuntimeFixture({ configMaxEntries: 42 });
-	fixture.store.entriesSnapshot = [entry("secret prompt text")];
-	fixture.store.blockReason = "corrupt_history";
-	fixture.install();
-	await fixture.emitSessionStart();
+for (const storageReason of ["corrupt_history", "project_root_mismatch"] as const) {
+	test(`${storageReason} status omits prompts and filesystem paths`, async () => {
+		const fixture = createRuntimeFixture({ configMaxEntries: 42 });
+		fixture.store.entriesSnapshot = [entry("secret prompt text")];
+		fixture.store.blockReason = storageReason;
+		fixture.install();
+		await fixture.emitSessionStart();
 
-	await fixture.runCommand("status");
+		await fixture.runCommand("status");
 
-	const message = fixture.context.notifications.at(-1)?.message ?? "";
-	assert.match(message, /entries=1/);
-	assert.match(message, /cap=42/);
-	assert.match(message, /project=\/workspace\/project/);
-	assert.match(message, /writeBlocked=corrupt_history/);
-	assert.doesNotMatch(message, /secret prompt text/);
-});
+		assert.deepEqual(fixture.context.notifications.at(-1), {
+			message: `pi-history: diagnosticsVersion=1; state=write_blocked; initialization=ready; storage=write_blocked; storageReason=${storageReason}; editor=ready; cap=42; scope=project`,
+			type: "warning",
+		});
+	});
+}
 
 test("clear confirms and clears active in-memory store", async () => {
 	const fixture = createRuntimeFixture();

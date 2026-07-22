@@ -96,6 +96,14 @@ Configuration failure omits unavailable `cap` and `scope`; every initialization
 failure omits `entries`. Status reports the latest initialization attempt
 without probing or retrying. Start or reload a TUI session to retry.
 
+Storage that safely refuses writes uses `state=write_blocked` and one reason:
+
+- `corrupt_history` — clearing can replace the corrupt history with an empty one.
+- `project_root_mismatch` — clearing remains blocked to preserve foreign history.
+
+Write-blocked status omits `entries`, prompt contents, project roots, and storage
+paths.
+
 Share only a `pi-history:` line containing `diagnosticsVersion=1`. Versioned
 diagnostics omit prompt text, raw errors, and exact filesystem paths.
 Surrounding warnings and terminal output are local operational notices, not
