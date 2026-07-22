@@ -16,10 +16,12 @@ All notable changes to this project are documented here. This format follows
 - Limited prompt capture, history I/O, commands, and editor integration to TUI sessions; RPC, JSON, and print modes are inert.
 - Added bounded initialization, storage, write-blocking, and editor health states with safe recovery behavior.
 - Bumped the diagnostic contract to version 2 with an `unsupported_schema` write-block reason.
+- Unified history block reasons on a single shared type so storage and diagnostic contracts cannot drift.
 
 ### Fixed
 
 - Preserved unsupported history schemas during record and clear attempts, including schemas written after runtime initialization.
+- Cleared stale storage degradation when a TUI session re-initializes, so a transient prior failure does not persist into a fresh healthy session.
 
 ## [0.1.1] - 2026-07-22
 

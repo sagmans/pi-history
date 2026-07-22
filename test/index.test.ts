@@ -179,6 +179,28 @@ test("new TUI session retries failed initialization", async () => {
 	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /state=healthy/);
 });
 
+test("new TUI session clears a stale storage degradation from the previous session", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.store.recordError = new Error("transient capture failure");
+	fixture.install();
+	await fixture.emitSessionStart();
+	await fixture.emitInput({ text: "first", source: "interactive" });
+	await fixture.runCommand("status");
+	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /state=storage_degraded/);
+
+	// A new session reloads a healthy store; the prior transient degradation
+	// must not persist into the fresh session's status.
+	fixture.store.recordError = undefined;
+	await fixture.emitSessionStart();
+	await fixture.runCommand("status");
+
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=0; cap=500; scope=project",
+		type: "info",
+	});
+});
+
 test("identity resolution failure reports a safe stage code", async () => {
 	const fixture = createRuntimeFixture();
 	fixture.install({

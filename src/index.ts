@@ -194,6 +194,10 @@ export function installPiHistoryForTest(
 		state.store = store;
 		state.lastError = undefined;
 		state.initializationFailureReason = undefined;
+		// A fresh store load supersedes any transient mutation failure from the
+		// previous session; without this reset a stale degradation would persist
+		// into the new session's status even though storage is now healthy.
+		state.storageDegradationReason = undefined;
 		notifyStoreWarnings(ctx, state, store);
 	}
 
