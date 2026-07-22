@@ -91,7 +91,11 @@ project (work repos included) land in one shared `global.json` and are
 recallable from any directory. That is why global is opt-in only. The shipped
 default keeps each repository's prompts in its own file.
 
-## Development
+## Maintainer development
+
+Maintenance is owner-authorized. Public bug reports are welcome, but external
+pull requests and feature requests are not accepted; see the
+[participation policy](CONTRIBUTING.md).
 
 Requires Node.js >= 22.19.0 (tests use `node --experimental-transform-types`).
 
@@ -106,6 +110,11 @@ npm run audit       # network-dependent high-severity dependency gate
 npm run verify:ci   # complete maintainer and CI gate
 ```
 
+`npm run verify:ci` is the authoritative maintainer gate and runs in every CI
+matrix leg. `npm run verify` is its deterministic offline subset. The audit
+currently reports moderate `GHSA-j3f2-48v5-ccww` in the dev-only `protobufjs`
+copy nested under pi; reassess it with every pi dependency update.
+
 Two biome rules are disabled in `biome.json` on purpose (inline comments in
 biome.json silently break rule overrides, so the rationale lives here):
 
@@ -117,7 +126,7 @@ biome.json silently break rule overrides, so the rationale lives here):
 Git hooks via husky: pre-commit runs `npm run check`, pre-push runs
 `npm run typecheck && npm test`. Hooks are dev-only: there is deliberately no
 `prepare` script, because pi runs `npm install` inside its package clones and
-hooks must never install on user machines. Contributors opt in once after
+hooks must never install on user machines. Maintainers opt in once after
 cloning:
 
 ```bash
@@ -126,5 +135,5 @@ npx husky
 
 ## License
 
-[MIT](LICENSE) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) ·
+[MIT](LICENSE) · [Security](SECURITY.md) · [Report bugs](CONTRIBUTING.md) ·
 [Releases](RELEASE.md)
