@@ -9,6 +9,7 @@ import {
 	readdir,
 	readFile,
 	rm,
+	rmdir,
 	writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -45,8 +46,10 @@ export type LegacyProfileMigrationResult = {
 	events: LegacyProfileMigrationEvent[];
 };
 
+type PublishFile = (sourcePath: string, targetPath: string) => Promise<void>;
+
 export async function prepareLegacyProfileMigration(
-	input: { homeDir?: string; agentDir?: string } = {},
+	input: { homeDir?: string; agentDir?: string; publishFile?: PublishFile } = {},
 ): Promise<LegacyProfileMigrationResult> {
 	const legacyAgentDir = path.join(input.homeDir ?? homedir(), LEGACY_AGENT_PATH);
 	await mkdir(legacyAgentDir, { recursive: true, mode: PRIVATE_DIR_MODE });
@@ -54,6 +57,7 @@ export async function prepareLegacyProfileMigration(
 		prepareLockedMigration({
 			legacyAgentDir,
 			agentDir: input.agentDir ?? getAgentDir(),
+			publishFile: input.publishFile ?? link,
 		}),
 	);
 }
@@ -61,6 +65,7 @@ export async function prepareLegacyProfileMigration(
 async function prepareLockedMigration(input: {
 	legacyAgentDir: string;
 	agentDir: string;
+	publishFile: PublishFile;
 }): Promise<LegacyProfileMigrationResult> {
 	const legacyHistoryDir = path.join(input.legacyAgentDir, HISTORY_DIRECTORY_NAME);
 	const bundleDir = path.join(input.legacyAgentDir, MIGRATION_BUNDLE_NAME);
@@ -74,6 +79,7 @@ async function prepareLockedMigration(input: {
 				legacyAgentDir: input.legacyAgentDir,
 				legacyHistoryDir,
 				bundleDir,
+				publishFile: input.publishFile,
 			}),
 		);
 	}
@@ -85,6 +91,7 @@ async function prepareLockedMigration(input: {
 			agentDir: input.agentDir,
 			snapshotDir,
 			fileNames: snapshotFileNames,
+			publishFile: input.publishFile,
 		}))
 	) {
 		events.push("profile_imported");
@@ -96,10 +103,10 @@ async function publishSnapshot(input: {
 	legacyAgentDir: string;
 	legacyHistoryDir: string;
 	bundleDir: string;
+	publishFile: PublishFile;
 }): Promise<Extract<LegacyProfileMigrationEvent, "snapshot_created" | "snapshot_empty">> {
 	const stageDir = await mkdtemp(path.join(input.legacyAgentDir, BUNDLE_STAGE_PREFIX));
 	await chmod(stageDir, PRIVATE_DIR_MODE);
-	let bundleClaimed = false;
 	try {
 		const sourceFileNames = await migratableFileNames(input.legacyHistoryDir);
 		const stageSnapshotDir = path.join(stageDir, SNAPSHOT_DIRECTORY_NAME);
@@ -116,23 +123,19 @@ async function publishSnapshot(input: {
 		await writePrivateFile(stageMarkerPath, MIGRATION_VERSION);
 
 		await mkdir(input.bundleDir, { mode: PRIVATE_DIR_MODE });
-		bundleClaimed = true;
 		await chmod(input.bundleDir, PRIVATE_DIR_MODE);
 		if (sourceFileNames.length > 0) {
 			const publishedSnapshotDir = path.join(input.bundleDir, SNAPSHOT_DIRECTORY_NAME);
 			await mkdir(publishedSnapshotDir, { mode: PRIVATE_DIR_MODE });
 			for (const fileName of sourceFileNames) {
-				await link(
+				await input.publishFile(
 					path.join(stageSnapshotDir, fileName),
 					path.join(publishedSnapshotDir, fileName),
 				);
 			}
 		}
-		await link(stageMarkerPath, path.join(input.bundleDir, MIGRATION_COMPLETE_MARKER));
+		await input.publishFile(stageMarkerPath, path.join(input.bundleDir, MIGRATION_COMPLETE_MARKER));
 		return sourceFileNames.length > 0 ? "snapshot_created" : "snapshot_empty";
-	} catch (error) {
-		if (bundleClaimed) await rm(input.bundleDir, { force: true, recursive: true }).catch(() => {});
-		throw error;
 	} finally {
 		await rm(stageDir, { force: true, recursive: true });
 	}
@@ -142,12 +145,13 @@ async function importSnapshot(input: {
 	agentDir: string;
 	snapshotDir: string;
 	fileNames: readonly string[];
+	publishFile: PublishFile;
 }): Promise<boolean> {
+	const targetDir = path.join(input.agentDir, HISTORY_DIRECTORY_NAME);
+	if (await pathExists(targetDir)) return false;
 	await mkdir(input.agentDir, { recursive: true, mode: PRIVATE_DIR_MODE });
 	const stageDir = await mkdtemp(path.join(input.agentDir, IMPORT_STAGE_PREFIX));
 	await chmod(stageDir, PRIVATE_DIR_MODE);
-	const targetDir = path.join(input.agentDir, HISTORY_DIRECTORY_NAME);
-	let targetClaimed = false;
 	try {
 		for (const fileName of input.fileNames) {
 			await copyPrivateFile(path.join(input.snapshotDir, fileName), path.join(stageDir, fileName));
@@ -155,15 +159,11 @@ async function importSnapshot(input: {
 		const stageMarkerPath = path.join(stageDir, PROFILE_IMPORT_COMPLETE_MARKER);
 		await writePrivateFile(stageMarkerPath, MIGRATION_VERSION);
 		if (!(await claimTargetDirectory(targetDir))) return false;
-		targetClaimed = true;
 		for (const fileName of input.fileNames) {
-			await link(path.join(stageDir, fileName), path.join(targetDir, fileName));
+			await input.publishFile(path.join(stageDir, fileName), path.join(targetDir, fileName));
 		}
-		await link(stageMarkerPath, path.join(targetDir, PROFILE_IMPORT_COMPLETE_MARKER));
+		await input.publishFile(stageMarkerPath, path.join(targetDir, PROFILE_IMPORT_COMPLETE_MARKER));
 		return true;
-	} catch (error) {
-		if (targetClaimed) await rm(targetDir, { force: true, recursive: true }).catch(() => {});
-		throw error;
 	} finally {
 		await rm(stageDir, { force: true, recursive: true });
 	}
@@ -177,7 +177,9 @@ async function withMigrationLock<Result>(
 	try {
 		return await operation();
 	} finally {
-		await rm(lockPath, { force: true, recursive: true });
+		// Only release the empty lock we acquired; never recursively delete a path
+		// another process may have replaced while migration was running.
+		await rmdir(lockPath).catch(() => {});
 	}
 }
 

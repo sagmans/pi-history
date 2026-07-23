@@ -42,8 +42,8 @@ export type ConfigLoadResult = {
 };
 
 // One layer of configuration, lowest precedence first. The shipped repo
-// config.json is the bottom layer; user config.json and user config.local.json
-// from PI_HISTORY_DIR stack on top; runtime overrides (tests) sit highest.
+// config.json is the bottom layer; profile config.json and config.local.json
+// from getPiHistoryDir() stack on top; runtime overrides (tests) sit highest.
 export type ConfigLayer = {
 	origin: string;
 	value: unknown;

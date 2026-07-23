@@ -11,6 +11,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
+import { link } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -129,6 +130,58 @@ test("snapshot copy failure leaves no bundle or profile target", async () => {
 	});
 });
 
+test("profile publication failure preserves files created after target claim", async () => {
+	await withMigrationFixture(async ({ homeDir, agentDir }) => {
+		const legacyHistoryDir = path.join(homeDir, LEGACY_AGENT_PATH, HISTORY_DIRECTORY_NAME);
+		mkdirSync(legacyHistoryDir, { recursive: true });
+		writeFileSync(path.join(legacyHistoryDir, "global.json"), SYNTHETIC_HISTORY);
+		const targetDir = path.join(agentDir, HISTORY_DIRECTORY_NAME);
+		const concurrentFile = path.join(targetDir, "concurrent.json");
+
+		await assert.rejects(
+			prepareLegacyProfileMigration({
+				homeDir,
+				agentDir,
+				publishFile: async (sourcePath, targetPath) => {
+					if (path.dirname(targetPath) === targetDir) {
+						writeFileSync(concurrentFile, "concurrent bytes\n");
+						throw new Error("synthetic publication failure");
+					}
+					await link(sourcePath, targetPath);
+				},
+			}),
+		);
+
+		assert.equal(readFileSync(concurrentFile, "utf8"), "concurrent bytes\n");
+	});
+});
+
+test("bundle publication failure preserves files created after bundle claim", async () => {
+	await withMigrationFixture(async ({ homeDir, agentDir }) => {
+		const legacyHistoryDir = path.join(homeDir, LEGACY_AGENT_PATH, HISTORY_DIRECTORY_NAME);
+		mkdirSync(legacyHistoryDir, { recursive: true });
+		writeFileSync(path.join(legacyHistoryDir, "global.json"), SYNTHETIC_HISTORY);
+		const bundleDir = path.join(homeDir, LEGACY_AGENT_PATH, MIGRATION_BUNDLE_NAME);
+		const concurrentFile = path.join(bundleDir, "concurrent");
+
+		await assert.rejects(
+			prepareLegacyProfileMigration({
+				homeDir,
+				agentDir,
+				publishFile: async (sourcePath, targetPath) => {
+					if (targetPath.startsWith(`${bundleDir}${path.sep}`)) {
+						writeFileSync(concurrentFile, "concurrent bundle bytes\n");
+						throw new Error("synthetic bundle publication failure");
+					}
+					await link(sourcePath, targetPath);
+				},
+			}),
+		);
+
+		assert.equal(readFileSync(concurrentFile, "utf8"), "concurrent bundle bytes\n");
+	});
+});
+
 test("pre-existing incomplete bundle is preserved and blocks migration", async () => {
 	await withMigrationFixture(async ({ homeDir, agentDir }) => {
 		const bundleDir = path.join(homeDir, LEGACY_AGENT_PATH, MIGRATION_BUNDLE_NAME);
@@ -179,6 +232,33 @@ test("existing populated profile target wins without byte or mode changes", asyn
 		assert.equal(readFileSync(targetFile, "utf8"), "existing target bytes\n");
 		assert.equal(statSync(targetFile).mode, targetMode);
 		assert.equal(existsSync(path.join(targetDir, PROFILE_IMPORT_COMPLETE_MARKER)), false);
+	});
+});
+
+test("existing profile target wins even when snapshot cannot be read", async () => {
+	await withMigrationFixture(async ({ homeDir, agentDir }) => {
+		const legacyHistoryDir = path.join(homeDir, LEGACY_AGENT_PATH, HISTORY_DIRECTORY_NAME);
+		mkdirSync(legacyHistoryDir, { recursive: true });
+		writeFileSync(path.join(legacyHistoryDir, "global.json"), SYNTHETIC_HISTORY);
+		await prepareLegacyProfileMigration({ homeDir, agentDir });
+		const snapshotFile = path.join(
+			homeDir,
+			LEGACY_AGENT_PATH,
+			MIGRATION_BUNDLE_NAME,
+			SNAPSHOT_DIRECTORY_NAME,
+			"global.json",
+		);
+		chmodSync(snapshotFile, 0o000);
+		const laterAgentDir = path.join(path.dirname(agentDir), "later-profile");
+		const targetDir = path.join(laterAgentDir, HISTORY_DIRECTORY_NAME);
+		const targetFile = path.join(targetDir, "global.json");
+		mkdirSync(targetDir, { recursive: true });
+		writeFileSync(targetFile, "existing target bytes\n");
+
+		const result = await prepareLegacyProfileMigration({ homeDir, agentDir: laterAgentDir });
+
+		assert.deepEqual(result.events, []);
+		assert.equal(readFileSync(targetFile, "utf8"), "existing target bytes\n");
 	});
 });
 
