@@ -6,6 +6,13 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-23
+
+### Changed
+
+- Moved npm distribution from `pi-history` to public package `@sagmans/pi-history`.
+- Preserved existing configuration and prompt-history paths during package migration.
+
 ## [0.1.2] - 2026-07-23
 
 ### Added
@@ -42,7 +49,8 @@ All notable changes to this project are documented here. This format follows
 - `/pi-history status` (metadata only) and `/pi-history clear` (confirmed wipe with a clear marker so older open sessions cannot restore entries).
 - Graceful fallback when ghost completion editor support is unavailable; `Ctrl+R` remains available.
 
-[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/sagmans/pi-history/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/sagmans/pi-history/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/sagmans/pi-history/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/sagmans/pi-history/releases/tag/v0.1.0

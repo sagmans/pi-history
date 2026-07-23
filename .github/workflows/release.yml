@@ -36,6 +36,9 @@ jobs:
 
   publish:
     needs: verify
+    # The first scoped release must exist before npm can trust this workflow.
+    # v0.1.3 is therefore verified here and bootstrapped manually per RELEASE.md.
+    if: github.ref_name != 'v0.1.3'
     runs-on: ubuntu-latest
     # Approval gate: the npm-release environment requires the release owner's
     # review, so every publish is an explicit human decision.
