@@ -15,10 +15,12 @@ readonly PRIVATE_FILE_MODE="600"
 readonly DIAGNOSTICS_VERSION="2"
 readonly HISTORY_SCHEMA_VERSION="1"
 readonly SMOKE_MAX_ENTRIES="42"
+readonly LEGACY_SMOKE_MAX_ENTRIES="99"
 readonly SMOKE_ENTRY_COUNT="1"
 readonly SMOKE_USE_COUNT="1"
 readonly GLOBAL_SCOPE_KEY="<global>"
 readonly SMOKE_CANARY="PI_HISTORY_SMOKE_SECRET_7E4A9C2D"
+readonly LEGACY_SMOKE_CANARY="PI_HISTORY_LEGACY_SECRET_8F5B0D3E"
 readonly FIXTURE_TIMESTAMP="2026-01-01T00:00:00.000Z"
 readonly EXPECTED_DIAGNOSTIC="pi-history: diagnosticsVersion=$DIAGNOSTICS_VERSION; state=healthy; initialization=ready; storage=ready; editor=ready; entries=$SMOKE_ENTRY_COUNT; cap=$SMOKE_MAX_ENTRIES; scope=global"
 
@@ -109,10 +111,11 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 smoke_root="$(mktemp -d "${TMPDIR:-/tmp}/pi-history-herdr-smoke.XXXXXX")"
 smoke_home="$smoke_root/home"
 agent_dir="$smoke_root/agent"
-history_dir="$smoke_home/.pi/agent/pi-history"
+history_dir="$agent_dir/pi-history"
+legacy_history_dir="$smoke_home/.pi/agent/pi-history"
 umask 077
-mkdir -p -- "$history_dir" "$agent_dir"
-chmod "$PRIVATE_DIR_MODE" "$smoke_home" "$agent_dir" "$history_dir"
+mkdir -p -- "$history_dir" "$legacy_history_dir"
+chmod "$PRIVATE_DIR_MODE" "$smoke_home" "$agent_dir" "$history_dir" "$legacy_history_dir"
 
 cat >"$history_dir/config.json" <<JSON
 {
@@ -137,6 +140,30 @@ cat >"$history_dir/global.json" <<JSON
 }
 JSON
 chmod "$PRIVATE_FILE_MODE" "$history_dir/config.json" "$history_dir/global.json"
+
+cat >"$legacy_history_dir/config.json" <<JSON
+{
+  "maxEntries": $LEGACY_SMOKE_MAX_ENTRIES,
+  "isolationLevel": "global"
+}
+JSON
+cat >"$legacy_history_dir/global.json" <<JSON
+{
+  "schemaVersion": $HISTORY_SCHEMA_VERSION,
+  "projectRoot": "$GLOBAL_SCOPE_KEY",
+  "createdAt": "$FIXTURE_TIMESTAMP",
+  "updatedAt": "$FIXTURE_TIMESTAMP",
+  "entries": [
+    {
+      "text": "$LEGACY_SMOKE_CANARY",
+      "createdAt": "$FIXTURE_TIMESTAMP",
+      "updatedAt": "$FIXTURE_TIMESTAMP",
+      "useCount": $SMOKE_USE_COUNT
+    }
+  ]
+}
+JSON
+chmod "$PRIVATE_FILE_MODE" "$legacy_history_dir/config.json" "$legacy_history_dir/global.json"
 
 split_json="$(
 	herdr pane split --current --direction right --ratio "$PANE_RATIO" --cwd "$repo_root" \
@@ -165,7 +192,7 @@ pane_json="$(herdr pane read "$pane_id" --source recent-unwrapped --lines "$CAPT
 diagnostic="$(printf '%s' "$pane_json" | extract_diagnostic)" || fail "unable to extract diagnostic line"
 
 [[ "$diagnostic" == "$EXPECTED_DIAGNOSTIC" ]] || fail "diagnostic contract mismatch"
-for private_value in "$SMOKE_CANARY" "$repo_root" "$history_dir" "$smoke_root" "$smoke_home" "$agent_dir"; do
+for private_value in "$SMOKE_CANARY" "$LEGACY_SMOKE_CANARY" "$repo_root" "$history_dir" "$legacy_history_dir" "$smoke_root" "$smoke_home" "$agent_dir"; do
 	[[ "$diagnostic" != *"$private_value"* ]] || fail "diagnostic exposed private runtime data"
 done
 

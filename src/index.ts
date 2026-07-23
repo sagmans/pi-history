@@ -34,6 +34,11 @@ import {
 	type RecordPromptResult,
 } from "./history-store.ts";
 import {
+	type LegacyProfileMigrationEvent,
+	type LegacyProfileMigrationResult,
+	prepareLegacyProfileMigration,
+} from "./legacy-profile-migration.ts";
+import {
 	createGlobalIdentity,
 	type ProjectExec,
 	type ProjectIdentity,
@@ -99,6 +104,7 @@ export type RuntimeInstallOptions = {
 	config?: Partial<PiHistoryConfig>;
 	now?: Clock;
 	readConfig?: () => { layers?: ConfigLayer[]; warnings?: string[] };
+	prepareStorage?: () => Promise<LegacyProfileMigrationResult>;
 	resolveIdentity?: (ctx: PiHistoryContext) => Promise<ProjectIdentity>;
 	loadStore?: (input: {
 		identity: ProjectIdentity;
@@ -133,6 +139,7 @@ type RuntimeState = {
 	editor: EditorDiagnosticState;
 	notifiedKeys: Set<string>;
 	editorInstalled: boolean;
+	storagePrepared: boolean;
 };
 
 export function installPiHistoryForTest(
@@ -150,8 +157,22 @@ export function installPiHistoryForTest(
 		editor: { editor: "ready" },
 		notifiedKeys: new Set(),
 		editorInstalled: false,
+		storagePrepared: false,
 	};
 	async function initialize(ctx: PiHistoryContext): Promise<void> {
+		if (!state.storagePrepared && options.prepareStorage) {
+			state.storagePrepared = true;
+			try {
+				const preparation = await options.prepareStorage();
+				notifyMigrationEvents(ctx, preparation.events);
+			} catch {
+				notify(
+					ctx,
+					"pi-history profile migration failed; isolated storage remains active",
+					"warning",
+				);
+			}
+		}
 		if (!state.config) {
 			try {
 				const loaded = loadRuntimeConfig(options);
@@ -507,6 +528,37 @@ function ghostDegradationMessage(reason: GhostDegradationReason): string {
 	}
 }
 
+function notifyMigrationEvents(
+	ctx: PiHistoryContext,
+	events: readonly LegacyProfileMigrationEvent[],
+): void {
+	for (const event of events) {
+		switch (event) {
+			case "snapshot_created":
+				notify(
+					ctx,
+					"pi-history froze legacy data for profile migration; pre-snapshot history may be shared across profiles",
+					"warning",
+				);
+				break;
+			case "snapshot_empty":
+				notify(ctx, "pi-history found no legacy data to migrate", "info");
+				break;
+			case "profile_imported":
+				notify(
+					ctx,
+					"pi-history imported frozen legacy data into this profile; review or clear history if needed",
+					"warning",
+				);
+				break;
+			default: {
+				const exhaustive: never = event;
+				throw new Error(`unsupported migration event: ${exhaustive}`);
+			}
+		}
+	}
+}
+
 function notifyConfigWarnings(ctx: PiHistoryContext, state: RuntimeState): void {
 	for (const warning of state.warnings) {
 		notifyOnce(ctx, state, `config:${warning}`, `pi-history config warning: ${warning}`, "warning");
@@ -553,5 +605,8 @@ function errorMessage(error: unknown): string {
 }
 
 export default function installPiHistory(pi: ExtensionAPI): void {
-	installPiHistoryForTest(pi, { readConfig: loadConfigFromDisk });
+	installPiHistoryForTest(pi, {
+		prepareStorage: prepareLegacyProfileMigration,
+		readConfig: loadConfigFromDisk,
+	});
 }
