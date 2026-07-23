@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 import { hasErrorCode, isPositiveInteger, isRecord } from "./guards.ts";
 
@@ -20,10 +21,13 @@ const ISOLATION_LEVELS = [IsolationLevel.Project, IsolationLevel.Global] as cons
 // opts into global sharing in their own user config.
 export const DEFAULT_ISOLATION_LEVEL: IsolationLevel = IsolationLevel.Project;
 
-// Data directory shared with the history store. User config lives here (not
-// inside the pi package clone) because `pi update` resets and cleans clones,
-// which would silently delete untracked config files on every update.
-export const PI_HISTORY_DIR = path.join(homedir(), ".pi", "agent", "pi-history");
+const PI_HISTORY_DIR_NAME = "pi-history";
+
+// Resolve on use so Pi's active profile remains the sole authority. User config
+// stays outside the package clone because `pi update` removes untracked files.
+export function getPiHistoryDir(): string {
+	return path.join(getAgentDir(), PI_HISTORY_DIR_NAME);
+}
 export const USER_CONFIG_FILE_NAME = "config.json";
 export const USER_LOCAL_CONFIG_FILE_NAME = "config.local.json";
 
@@ -38,8 +42,8 @@ export type ConfigLoadResult = {
 };
 
 // One layer of configuration, lowest precedence first. The shipped repo
-// config.json is the bottom layer; user config.json and user config.local.json
-// from PI_HISTORY_DIR stack on top; runtime overrides (tests) sit highest.
+// config.json is the bottom layer; profile config.json and config.local.json
+// from getPiHistoryDir() stack on top; runtime overrides (tests) sit highest.
 export type ConfigLayer = {
 	origin: string;
 	value: unknown;
@@ -156,7 +160,7 @@ function readConfigLayer(input: {
 
 export function loadConfigFromDisk(
 	extensionRoot = getExtensionRoot(),
-	userDir = PI_HISTORY_DIR,
+	userDir = getPiHistoryDir(),
 ): { layers: ConfigLayer[]; warnings: string[] } {
 	const warnings: string[] = [];
 	const layers = [
@@ -184,7 +188,7 @@ export function loadConfigFromDisk(
 
 export function loadPiHistoryConfig(
 	extensionRoot = getExtensionRoot(),
-	userDir = PI_HISTORY_DIR,
+	userDir = getPiHistoryDir(),
 ): ConfigLoadResult {
 	const loaded = loadConfigFromDisk(extensionRoot, userDir);
 	const normalized = normalizeConfig(loaded.layers);

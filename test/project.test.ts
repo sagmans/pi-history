@@ -20,6 +20,8 @@ import {
 	validateStoredProjectRoot,
 } from "../src/project.ts";
 
+const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
+
 test("global identity uses a fixed sentinel scope and shared file name", () => {
 	const identity = createGlobalIdentity({ historyBaseDir: "/private/history" });
 
@@ -248,6 +250,18 @@ test("default storage base stays under the Pi private agent directory", () => {
 	assert.match(defaultHistoryBaseDir(), /\.pi[/\\]agent[/\\]pi-history$/);
 });
 
+test("default storage base follows Pi agent-directory changes", () => {
+	const firstAgentDir = path.join(tmpdir(), "pi-profile-a");
+	const secondAgentDir = path.join(tmpdir(), "pi-profile-b");
+
+	const first = withEnvironmentVariable(PI_AGENT_DIR_ENV, firstAgentDir, defaultHistoryBaseDir);
+	const second = withEnvironmentVariable(PI_AGENT_DIR_ENV, secondAgentDir, defaultHistoryBaseDir);
+
+	assert.equal(first, path.join(firstAgentDir, "pi-history"));
+	assert.equal(second, path.join(secondAgentDir, "pi-history"));
+	assert.notEqual(first, second);
+});
+
 test("stored projectRoot mismatch returns write-blocking validation", () => {
 	const identity = createProjectIdentity({
 		kind: "directory",
@@ -265,6 +279,21 @@ test("stored projectRoot mismatch returns write-blocking validation", () => {
 		assert.equal(validation.storedProjectRoot, "/tmp/other");
 	}
 });
+
+function withEnvironmentVariable<Result>(
+	name: string,
+	value: string,
+	operation: () => Result,
+): Result {
+	const previous = process.env[name];
+	try {
+		process.env[name] = value;
+		return operation();
+	} finally {
+		if (previous === undefined) delete process.env[name];
+		else process.env[name] = previous;
+	}
+}
 
 async function withProjectFixture(
 	testBody: (fixture: { root: string; historyBaseDir: string }) => Promise<void>,

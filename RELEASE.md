@@ -24,7 +24,8 @@ changes; patch bumps are fixes only. The git tag (`vX.Y.Z`) and
    Exercise: prompt capture, restart persistence, `/pi-history status`,
    `/pi-history clear`, `Ctrl+R`, ghost completion or its graceful fallback.
 5. README accuracy pass: every documented command/path/config key still
-   behaves as written.
+   behaves as written; profile-storage changes include disposable default and
+   custom `PI_CODING_AGENT_DIR` coverage.
 6. Changelog roll-forward: `CHANGELOG.md` carries a new dated `[X.Y.Z]`
    section for the target version with the relevant `Unreleased` entries,
    and exactly one `Unreleased` section remains.
@@ -123,7 +124,10 @@ Runtime configuration and prompt history remain under
   behavior (forward-fix preferred over history rewrite or unpublish). This
   preserves version → tag → source SHA → warning → replacement traceability.
 - **Bad default/config:** patch release; never silently rewrite user config
-  under `~/.pi/agent/pi-history/`.
+  under any `<Pi agent directory>/pi-history/`.
+- **Bad profile migration:** disable future automatic imports without deleting
+  source, profile targets, the completed bundle marker, or already imported
+  data; publish a forward fix.
 - **History data:** the store must never delete or rewrite a history file it
   does not recognize (project-mismatch protection). Any schema change
   requires a migration plan in the PR and a note in the release notes.

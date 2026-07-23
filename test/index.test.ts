@@ -1,4 +1,7 @@
 import { strict as assert } from "node:assert";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import type {
@@ -8,7 +11,7 @@ import type {
 	InputEventResult,
 } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
-import {
+import installPiHistory, {
 	type EditorFactory,
 	installPiHistoryForTest,
 	type PiHistoryApi,
@@ -35,6 +38,8 @@ import {
 import { testTheme } from "./theme-fixture.ts";
 
 const PROJECT_ROOT = "/workspace/project";
+const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
+const HOME_ENV = "HOME";
 const NON_TUI_MODES = ["rpc", "json", "print"] as const;
 type RuntimeMode = "tui" | (typeof NON_TUI_MODES)[number];
 
@@ -55,10 +60,116 @@ test("config loading waits for TUI session start", async () => {
 	assert.equal(configReads, 1);
 });
 
-test("status observes state without initializing the runtime", async () => {
+test("migration preparation runs once before the first config read", async () => {
 	const fixture = createRuntimeFixture();
+	const sequence: string[] = [];
+	fixture.install({
+		prepareStorage: async () => {
+			sequence.push("migration");
+			return { events: [] };
+		},
+		readConfig: () => {
+			sequence.push("config");
+			return {};
+		},
+	});
+
+	await fixture.emitSessionStart();
+	await fixture.emitSessionStart();
+
+	assert.deepEqual(sequence, ["migration", "config"]);
+});
+
+test("migration events emit fixed privacy-safe operational notices", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.install({
+		prepareStorage: async () => ({
+			events: ["snapshot_created", "profile_imported"],
+		}),
+	});
+
+	await fixture.emitSessionStart();
+
+	assert.deepEqual(fixture.context.notifications.slice(0, 2), [
+		{
+			message:
+				"pi-history froze legacy data for profile migration; pre-snapshot history may be shared across profiles",
+			type: "warning",
+		},
+		{
+			message:
+				"pi-history imported frozen legacy data into this profile; review or clear history if needed",
+			type: "warning",
+		},
+	]);
+	assert.doesNotMatch(notificationText(fixture.context), /\/private|prompt|agent/);
+});
+
+test("migration failure warns safely and retries on the next session", async () => {
+	const fixture = createRuntimeFixture();
+	let preparationCalls = 0;
 	let configReads = 0;
 	fixture.install({
+		prepareStorage: async () => {
+			preparationCalls++;
+			throw new Error("private prompt at /private/history");
+		},
+		readConfig: () => {
+			configReads++;
+			return {};
+		},
+	});
+
+	await fixture.emitSessionStart();
+	await fixture.emitSessionStart();
+
+	assert.equal(preparationCalls, 2);
+	assert.equal(configReads, 1);
+	assert.deepEqual(fixture.context.notifications[0], {
+		message: "pi-history profile migration failed; isolated storage remains active",
+		type: "warning",
+	});
+	assert.doesNotMatch(notificationText(fixture.context), /private prompt|\/private/);
+});
+
+test("production installer prepares migration only inside disposable Pi state", async () => {
+	const root = mkdtempSync(path.join(tmpdir(), "pi-history-runtime-migration-"));
+	const homeDir = path.join(root, "home");
+	const agentDir = path.join(root, "profile");
+	const pi = new FakePi();
+	const context = new FakeContext(true, "tui");
+	try {
+		await withEnvironmentVariables(
+			{
+				[HOME_ENV]: homeDir,
+				[PI_AGENT_DIR_ENV]: agentDir,
+			},
+			async () => {
+				installPiHistory(pi as never);
+				await pi.sessionStartHandler?.({}, context);
+			},
+		);
+
+		assert.equal(
+			existsSync(
+				path.join(homeDir, ".pi", "agent", "pi-history-profile-migration-v1", ".complete"),
+			),
+			true,
+		);
+	} finally {
+		rmSync(root, { force: true, recursive: true });
+	}
+});
+
+test("status observes state without initializing the runtime", async () => {
+	const fixture = createRuntimeFixture();
+	let preparationCalls = 0;
+	let configReads = 0;
+	fixture.install({
+		prepareStorage: async () => {
+			preparationCalls++;
+			return { events: [] };
+		},
 		readConfig: () => {
 			configReads++;
 			return {};
@@ -67,6 +178,7 @@ test("status observes state without initializing the runtime", async () => {
 
 	await fixture.runCommand("status");
 
+	assert.equal(preparationCalls, 0);
 	assert.equal(configReads, 0);
 	assert.deepEqual(fixture.context.notifications.at(-1), {
 		message: "pi-history is not initialized",
@@ -239,7 +351,7 @@ test("storage loading failure reports a safe stage code", async () => {
 	assert.match(notificationText(fixture.context), /storage secret at \/private\/history/);
 });
 
-test("clear on global scope confirms with host-wide wording", async () => {
+test("clear on global scope confirms with active-profile wording", async () => {
 	const fixture = createRuntimeFixture({
 		isolationLevel: IsolationLevel.Global,
 	});
@@ -249,7 +361,8 @@ test("clear on global scope confirms with host-wide wording", async () => {
 	await fixture.runCommand("clear");
 
 	assert.equal(fixture.store.clearCount, 1);
-	assert.match(fixture.context.confirmMessages.at(-1) ?? "", /all projects on this host/);
+	assert.match(fixture.context.confirmMessages.at(-1) ?? "", /all projects in this Pi profile/);
+	assert.doesNotMatch(fixture.context.confirmMessages.at(-1) ?? "", /host/);
 	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /global scope/);
 });
 
@@ -270,6 +383,7 @@ test("interactive input records a prompt and continues", async () => {
 for (const mode of NON_TUI_MODES) {
 	test(`${mode} mode keeps only static command metadata`, async () => {
 		const fixture = createRuntimeFixture({ mode });
+		let preparationCalls = 0;
 		let configReads = 0;
 		let identityResolutions = 0;
 		let storeLoads = 0;
@@ -278,6 +392,10 @@ for (const mode of NON_TUI_MODES) {
 		assert.ok(resolveIdentity);
 		assert.ok(loadStore);
 		fixture.install({
+			prepareStorage: async () => {
+				preparationCalls++;
+				return { events: [] };
+			},
 			readConfig: () => {
 				configReads++;
 				return {};
@@ -300,6 +418,7 @@ for (const mode of NON_TUI_MODES) {
 		await fixture.runCommand("clear");
 
 		assert.deepEqual(result, { action: "continue" });
+		assert.equal(preparationCalls, 0);
 		assert.equal(configReads, 0);
 		assert.equal(identityResolutions, 0);
 		assert.equal(storeLoads, 0);
@@ -689,6 +808,22 @@ test("unknown command keeps bounded usage behavior", async () => {
 		type: "warning",
 	});
 });
+
+async function withEnvironmentVariables<Result>(
+	values: Readonly<Record<string, string>>,
+	operation: () => Promise<Result>,
+): Promise<Result> {
+	const previous = Object.fromEntries(Object.keys(values).map((name) => [name, process.env[name]]));
+	try {
+		Object.assign(process.env, values);
+		return await operation();
+	} finally {
+		for (const [name, value] of Object.entries(previous)) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+	}
+}
 
 function notificationText(context: FakeContext): string {
 	return context.notifications.map((notification) => notification.message).join("\n");

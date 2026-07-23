@@ -1,0 +1,9 @@
+# Bind storage to Pi profiles and freeze legacy migration
+
+pi-history resolves live configuration and prompt history beneath Pi's supported `getAgentDir()` profile boundary. The default remains `~/.pi/agent/pi-history/`, while custom `PI_CODING_AGENT_DIR` profiles no longer share HOME-derived live data.
+
+The first fixed TUI initialization freezes recognized direct regular files from the former HOME-derived directory into `~/.pi/agent/pi-history-profile-migration-v1/`. Recognized files are `config.json`, `config.local.json`, `global.json`, and `project-<sha256>.json`; symlinked directories or files, unknown files, lock directories, and temporary artifacts are excluded. Files are opened without following links and copied from validated handles. A completion marker freezes an empty source too, so later default-profile prompts never enter future profile imports.
+
+Absent profile storage imports only this frozen snapshot. Atomic directory claims, private staging, no-replace file publication, and completion markers preserve existing targets, including empty directories. Private claims retain the exact staged cutoff and distinguish migration-owned incomplete publication, so a later TUI start resumes missing files without replacing concurrent bytes. Owner metadata serializes migration, reclaims confirmed dead owners, and waits for live owners rather than allowing writable initialization to pass the cutoff. Migration failure emits a fixed operational notice and retries on the next TUI session without weakening profile-isolated live paths.
+
+This intentionally accepts historical disclosure: imported profiles can read pre-snapshot history that was previously mixed, and each import duplicates those private files. Remove only the bundle's `snapshot/` directory to stop future imports. Retain the bundle and `.complete` marker; deleting them permits a new snapshot from the still-live default profile.

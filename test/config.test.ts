@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -14,6 +14,7 @@ import {
 	normalizeConfig,
 } from "../src/config.ts";
 
+const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 const SHIPPED_MAX_ENTRIES = 2_000;
 
 function layer(value: unknown, origin = "config.json"): ConfigLayer {
@@ -102,6 +103,29 @@ test("user config overrides shipped config without a local layer", () => {
 	});
 });
 
+test("default user config follows Pi agent-directory changes", () => {
+	withConfigFixture((repoDir, fixtureRoot) => {
+		const firstAgentDir = path.join(fixtureRoot, "profile-a");
+		const secondAgentDir = path.join(fixtureRoot, "profile-b");
+		const firstHistoryDir = path.join(firstAgentDir, "pi-history");
+		const secondHistoryDir = path.join(secondAgentDir, "pi-history");
+		mkdirSync(firstHistoryDir, { recursive: true });
+		mkdirSync(secondHistoryDir, { recursive: true });
+		writeFileSync(path.join(firstHistoryDir, "config.json"), '{"maxEntries": 101}');
+		writeFileSync(path.join(secondHistoryDir, "config.json"), '{"maxEntries": 202}');
+
+		const first = withEnvironmentVariable(PI_AGENT_DIR_ENV, firstAgentDir, () =>
+			loadPiHistoryConfig(repoDir),
+		);
+		const second = withEnvironmentVariable(PI_AGENT_DIR_ENV, secondAgentDir, () =>
+			loadPiHistoryConfig(repoDir),
+		);
+
+		assert.equal(first.config.maxEntries, 101);
+		assert.equal(second.config.maxEntries, 202);
+	});
+});
+
 test("invalid and non-positive caps fall back to default with warnings", () => {
 	const invalidNumber = normalizeConfig([layer({ maxEntries: 0 })]);
 	const invalidType = normalizeConfig([layer({ maxEntries: "500" })]);
@@ -153,6 +177,21 @@ test("invalid user JSON warns and keeps lower layers effective", () => {
 		assert.match(result.warnings.join("\n"), /config\.local\.json invalid/);
 	});
 });
+
+function withEnvironmentVariable<Result>(
+	name: string,
+	value: string,
+	operation: () => Result,
+): Result {
+	const previous = process.env[name];
+	try {
+		process.env[name] = value;
+		return operation();
+	} finally {
+		if (previous === undefined) delete process.env[name];
+		else process.env[name] = previous;
+	}
+}
 
 function withConfigFixture(testBody: (repoDir: string, userDir: string) => void): void {
 	const repoDir = mkdtempSync(path.join(tmpdir(), "pi-history-repo-"));
