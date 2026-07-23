@@ -10,6 +10,11 @@ All notable changes to this project are documented here. This format follows
 
 - Reusable, CLI-only npm and GitHub trusted-publishing setup scripts with guarded mutations and fake-CLI tests.
 
+### Fixed
+
+- Isolated configuration and prompt history under Pi's active agent directory so profiles sharing one `HOME` no longer read each other's live data.
+- Added a non-destructive frozen legacy snapshot for absent profile targets, with fixed privacy-safe migration notices.
+
 ## [0.1.3] - 2026-07-23
 
 ### Changed

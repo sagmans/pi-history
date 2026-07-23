@@ -4,7 +4,8 @@ Ghost completion for prompt history across [pi](https://github.com/earendil-work
 
 `pi-history` records your real prompts. Two isolation levels — `project`
 (default: one history per project) and `global` (one host-wide history) —
-configured under `~/.pi/agent/pi-history/`.
+configured under `<Pi agent directory>/pi-history/` (normally
+`~/.pi/agent/pi-history/`).
 
 ## Features
 
@@ -48,11 +49,26 @@ The package rename does not move or rewrite configuration or prompt history unde
 { "maxEntries": 2000, "isolationLevel": "project" }
 ```
 
-User config lives in the data directory (`~/.pi/agent/pi-history/`), not the
-installed package, so it survives `pi update`. Precedence (lowest → highest):
+User config lives in the active Pi profile's data directory
+(`<Pi agent directory>/pi-history/`), not the installed package, so it survives
+`pi update`. Precedence (lowest → highest):
 built-in defaults → shipped `config.json` → `config.json` → `config.local.json`.
 The highest file that mentions an option wins; an invalid value falls back to
 the default with a warning.
+
+## Profile isolation and upgrade migration
+
+Each `PI_CODING_AGENT_DIR` profile has separate configuration and history.
+On the first TUI start after upgrading, pi-history freezes recognized files from
+the former default location into a versioned migration snapshot. A profile with
+no existing `pi-history/` directory imports that frozen snapshot; any existing
+target, including an empty directory, wins unchanged.
+
+The snapshot can contain pre-upgrade history previously mixed across profiles,
+and each import creates another private copy. To stop future imports, remove
+only `~/.pi/agent/pi-history-profile-migration-v1/snapshot/`; retain the bundle
+and `.complete` marker so current default-profile data is never snapshotted
+again. Details: [`docs/adr/0002-profile-storage-migration.md`](https://github.com/sagmans/pi-history/blob/main/docs/adr/0002-profile-storage-migration.md).
 
 ## Diagnostics
 
