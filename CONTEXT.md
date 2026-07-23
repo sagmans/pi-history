@@ -13,8 +13,8 @@ A history scope shared by linked worktrees of one Git repository, or by one non-
 _Avoid_: Repository path, current folder
 
 **Global scope**:
-A host-wide, opt-in history scope shared across projects.
-_Avoid_: User scope, system scope
+An opt-in history scope shared across projects within one active Pi profile.
+_Avoid_: Host scope, user scope, system scope
 
 **Diagnostic surface**:
 The versioned, share-safe health metadata emitted only by `/pi-history status` in TUI mode.
@@ -103,3 +103,7 @@ _Avoid_: User-wide storage, host history
 **Frozen migration snapshot**:
 The immutable pre-cutoff copy of recognized legacy pi-history files used only to seed absent profile storage without consulting the still-live default profile again.
 _Avoid_: Backup, live migration source
+
+**Migration-owned claim**:
+Private versioned metadata that distinguishes resumable interrupted migration publication from unrelated pre-existing profile or bundle data.
+_Avoid_: Lock, backup marker

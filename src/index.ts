@@ -161,9 +161,9 @@ export function installPiHistoryForTest(
 	};
 	async function initialize(ctx: PiHistoryContext): Promise<void> {
 		if (!state.storagePrepared && options.prepareStorage) {
-			state.storagePrepared = true;
 			try {
 				const preparation = await options.prepareStorage();
+				state.storagePrepared = true;
 				notifyMigrationEvents(ctx, preparation.events);
 			} catch {
 				notify(
@@ -185,7 +185,7 @@ export function installPiHistoryForTest(
 		}
 		notifyConfigWarnings(ctx, state);
 		const config = state.config;
-		// Global isolation skips git discovery entirely: one shared history per host.
+		// Global isolation skips git discovery: one shared history within the active profile.
 		const resolveIdentity =
 			options.resolveIdentity ??
 			(config.isolationLevel === IsolationLevel.Global
@@ -371,7 +371,7 @@ async function handleClearCommand(
 	const confirmed = await ctx.ui.confirm(
 		"Clear pi-history?",
 		globalScope
-			? "Remove the global prompt history shared across all projects on this host."
+			? "Remove the global prompt history shared across all projects in this Pi profile."
 			: "Remove stored prompt history for the current project only.",
 	);
 	if (!confirmed) {

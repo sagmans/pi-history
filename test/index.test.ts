@@ -105,7 +105,7 @@ test("migration events emit fixed privacy-safe operational notices", async () =>
 	assert.doesNotMatch(notificationText(fixture.context), /\/private|prompt|agent/);
 });
 
-test("migration failure warns safely once and continues isolated initialization", async () => {
+test("migration failure warns safely and retries on the next session", async () => {
 	const fixture = createRuntimeFixture();
 	let preparationCalls = 0;
 	let configReads = 0;
@@ -123,7 +123,7 @@ test("migration failure warns safely once and continues isolated initialization"
 	await fixture.emitSessionStart();
 	await fixture.emitSessionStart();
 
-	assert.equal(preparationCalls, 1);
+	assert.equal(preparationCalls, 2);
 	assert.equal(configReads, 1);
 	assert.deepEqual(fixture.context.notifications[0], {
 		message: "pi-history profile migration failed; isolated storage remains active",
@@ -351,7 +351,7 @@ test("storage loading failure reports a safe stage code", async () => {
 	assert.match(notificationText(fixture.context), /storage secret at \/private\/history/);
 });
 
-test("clear on global scope confirms with host-wide wording", async () => {
+test("clear on global scope confirms with active-profile wording", async () => {
 	const fixture = createRuntimeFixture({
 		isolationLevel: IsolationLevel.Global,
 	});
@@ -361,7 +361,8 @@ test("clear on global scope confirms with host-wide wording", async () => {
 	await fixture.runCommand("clear");
 
 	assert.equal(fixture.store.clearCount, 1);
-	assert.match(fixture.context.confirmMessages.at(-1) ?? "", /all projects on this host/);
+	assert.match(fixture.context.confirmMessages.at(-1) ?? "", /all projects in this Pi profile/);
+	assert.doesNotMatch(fixture.context.confirmMessages.at(-1) ?? "", /host/);
 	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /global scope/);
 });
 

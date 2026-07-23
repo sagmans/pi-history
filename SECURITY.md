@@ -56,9 +56,11 @@ private permissions (0700 directories, 0600 files) and never transmits data.
 The profile-isolation upgrade freezes recognized legacy files under
 `~/.pi/agent/pi-history-profile-migration-v1/`. That snapshot can contain
 pre-upgrade history mixed across profiles; every profile import creates another
-private copy. Existing profile targets are never merged or overwritten. Remove
-only the bundle's `snapshot/` directory to stop future imports; keep the bundle
-and `.complete` marker so later default-profile prompts cannot be snapshotted.
+private copy. Existing profile targets are never merged or overwritten.
+Migration rejects symlinked sources and resumes only its own private incomplete
+claims after interruption. Remove only the bundle's `snapshot/` directory to
+stop future imports; keep the bundle and `.complete` marker so later
+default-profile prompts cannot be snapshotted.
 
 Reports about local data exposure, cross-profile or cross-project history
 leakage, unsafe file handling, or extension privilege abuse are in scope.

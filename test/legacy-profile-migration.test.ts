@@ -12,9 +12,10 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { link } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { prepareLegacyProfileMigration } from "../src/legacy-profile-migration.ts";
 
@@ -23,6 +24,8 @@ const MIGRATION_BUNDLE_NAME = "pi-history-profile-migration-v1";
 const HISTORY_DIRECTORY_NAME = "pi-history";
 const MIGRATION_COMPLETE_MARKER = ".complete";
 const PROFILE_IMPORT_COMPLETE_MARKER = ".pi-history-profile-migration-v1.complete";
+const MIGRATION_LOCK_NAME = ".pi-history-profile-migration-v1.lock";
+const LOCK_OWNER_FILE_NAME = "owner.json";
 const SNAPSHOT_DIRECTORY_NAME = "snapshot";
 const SYNTHETIC_HISTORY = "synthetic history\n";
 const PROJECT_HISTORY_FILE_NAME = `project-${"a".repeat(64)}.json`;
@@ -182,6 +185,71 @@ test("bundle publication failure preserves files created after bundle claim", as
 	});
 });
 
+test("bundle publication resumes exact staged bytes after failure", async () => {
+	await withMigrationFixture(async ({ homeDir, agentDir }) => {
+		const legacyAgentDir = path.join(homeDir, LEGACY_AGENT_PATH);
+		const legacyHistoryDir = path.join(legacyAgentDir, HISTORY_DIRECTORY_NAME);
+		const bundleDir = path.join(legacyAgentDir, MIGRATION_BUNDLE_NAME);
+		mkdirSync(legacyHistoryDir, { recursive: true });
+		writeFileSync(path.join(legacyHistoryDir, "config.json"), "before cutoff config\n");
+		writeFileSync(path.join(legacyHistoryDir, "global.json"), "before cutoff history\n");
+		let publications = 0;
+
+		await assert.rejects(
+			prepareLegacyProfileMigration({
+				homeDir,
+				agentDir,
+				publishFile: async (sourcePath, targetPath) => {
+					if (targetPath.startsWith(`${bundleDir}${path.sep}`) && ++publications === 2) {
+						throw new Error("synthetic bundle interruption");
+					}
+					await link(sourcePath, targetPath);
+				},
+			}),
+		);
+		writeFileSync(path.join(legacyHistoryDir, "global.json"), "after cutoff history\n");
+
+		const result = await prepareLegacyProfileMigration({ homeDir, agentDir });
+
+		assert.deepEqual(result.events, ["snapshot_created", "profile_imported"]);
+		assert.equal(
+			readFileSync(path.join(bundleDir, SNAPSHOT_DIRECTORY_NAME, "global.json"), "utf8"),
+			"before cutoff history\n",
+		);
+	});
+});
+
+test("profile publication resumes missing files after failure", async () => {
+	await withMigrationFixture(async ({ homeDir, agentDir }) => {
+		const legacyHistoryDir = path.join(homeDir, LEGACY_AGENT_PATH, HISTORY_DIRECTORY_NAME);
+		const targetDir = path.join(agentDir, HISTORY_DIRECTORY_NAME);
+		mkdirSync(legacyHistoryDir, { recursive: true });
+		writeFileSync(path.join(legacyHistoryDir, "config.json"), "config bytes\n");
+		writeFileSync(path.join(legacyHistoryDir, "global.json"), "history bytes\n");
+		let targetPublications = 0;
+
+		await assert.rejects(
+			prepareLegacyProfileMigration({
+				homeDir,
+				agentDir,
+				publishFile: async (sourcePath, targetPath) => {
+					if (path.dirname(targetPath) === targetDir && ++targetPublications === 2) {
+						throw new Error("synthetic profile interruption");
+					}
+					await link(sourcePath, targetPath);
+				},
+			}),
+		);
+
+		const result = await prepareLegacyProfileMigration({ homeDir, agentDir });
+
+		assert.deepEqual(result.events, ["profile_imported"]);
+		assert.equal(readFileSync(path.join(targetDir, "config.json"), "utf8"), "config bytes\n");
+		assert.equal(readFileSync(path.join(targetDir, "global.json"), "utf8"), "history bytes\n");
+		assert.equal(existsSync(path.join(targetDir, PROFILE_IMPORT_COMPLETE_MARKER)), true);
+	});
+});
+
 test("pre-existing incomplete bundle is preserved and blocks migration", async () => {
 	await withMigrationFixture(async ({ homeDir, agentDir }) => {
 		const bundleDir = path.join(homeDir, LEGACY_AGENT_PATH, MIGRATION_BUNDLE_NAME);
@@ -194,6 +262,49 @@ test("pre-existing incomplete bundle is preserved and blocks migration", async (
 		assert.deepEqual(readdirSync(bundleDir), ["sentinel"]);
 		assert.equal(readFileSync(sentinelPath, "utf8"), "existing bundle bytes\n");
 		assert.equal(existsSync(path.join(agentDir, HISTORY_DIRECTORY_NAME)), false);
+	});
+});
+
+test("dead migration lock owner is reclaimed", async () => {
+	await withMigrationFixture(async ({ homeDir, agentDir }) => {
+		const lockPath = path.join(homeDir, LEGACY_AGENT_PATH, MIGRATION_LOCK_NAME);
+		mkdirSync(lockPath, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+		writeFileSync(
+			path.join(lockPath, LOCK_OWNER_FILE_NAME),
+			`${JSON.stringify({
+				pid: 999_999,
+				host: hostname(),
+				createdAt: "2000-01-01T00:00:00.000Z",
+				token: "dead-owner",
+			})}\n`,
+		);
+
+		const result = await prepareLegacyProfileMigration({ homeDir, agentDir });
+
+		assert.deepEqual(result.events, ["snapshot_empty"]);
+		assert.equal(existsSync(lockPath), false);
+	});
+});
+
+test("live migration owner is awaited beyond the former timeout", async () => {
+	await withMigrationFixture(async ({ homeDir, agentDir }) => {
+		const lockPath = path.join(homeDir, LEGACY_AGENT_PATH, MIGRATION_LOCK_NAME);
+		mkdirSync(lockPath, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+		writeFileSync(
+			path.join(lockPath, LOCK_OWNER_FILE_NAME),
+			`${JSON.stringify({
+				pid: process.pid,
+				host: hostname(),
+				createdAt: new Date().toISOString(),
+				token: "live-owner",
+			})}\n`,
+		);
+		const release = delay(2_100).then(() => rmSync(lockPath, { force: true, recursive: true }));
+
+		const result = await prepareLegacyProfileMigration({ homeDir, agentDir });
+		await release;
+
+		assert.deepEqual(result.events, ["snapshot_empty"]);
 	});
 });
 
@@ -294,6 +405,62 @@ test("later profiles import the frozen cutoff instead of live legacy changes", a
 		assert.deepEqual(result.events, ["profile_imported"]);
 		assert.equal(readFileSync(importedFile, "utf8"), "before cutoff\n");
 		assert.equal(readFileSync(sourceFile, "utf8"), "after cutoff\n");
+	});
+});
+
+test("symlinked legacy history directory is rejected", async () => {
+	await withMigrationFixture(async ({ homeDir, agentDir }) => {
+		const legacyAgentDir = path.join(homeDir, LEGACY_AGENT_PATH);
+		const externalHistoryDir = path.join(homeDir, "external-history");
+		mkdirSync(legacyAgentDir, { recursive: true });
+		mkdirSync(externalHistoryDir);
+		writeFileSync(path.join(externalHistoryDir, "global.json"), "external bytes\n");
+		symlinkSync(externalHistoryDir, path.join(legacyAgentDir, HISTORY_DIRECTORY_NAME));
+
+		await assert.rejects(prepareLegacyProfileMigration({ homeDir, agentDir }));
+
+		assert.equal(existsSync(path.join(agentDir, HISTORY_DIRECTORY_NAME)), false);
+	});
+});
+
+test("symlinked completed bundle directory is rejected", async () => {
+	await withMigrationFixture(async ({ homeDir, agentDir }) => {
+		const legacyAgentDir = path.join(homeDir, LEGACY_AGENT_PATH);
+		const bundleDir = path.join(legacyAgentDir, MIGRATION_BUNDLE_NAME);
+		await prepareLegacyProfileMigration({ homeDir, agentDir });
+		rmSync(bundleDir, { recursive: true });
+		const externalBundleDir = path.join(homeDir, "external-bundle");
+		const externalSnapshotDir = path.join(externalBundleDir, SNAPSHOT_DIRECTORY_NAME);
+		mkdirSync(externalSnapshotDir, { recursive: true });
+		writeFileSync(path.join(externalBundleDir, MIGRATION_COMPLETE_MARKER), "1\n");
+		writeFileSync(path.join(externalSnapshotDir, "global.json"), "external bytes\n");
+		symlinkSync(externalBundleDir, bundleDir);
+		const laterAgentDir = path.join(path.dirname(agentDir), "later-profile");
+
+		await assert.rejects(prepareLegacyProfileMigration({ homeDir, agentDir: laterAgentDir }));
+
+		assert.equal(existsSync(path.join(laterAgentDir, HISTORY_DIRECTORY_NAME)), false);
+	});
+});
+
+test("symlinked completed snapshot directory is rejected", async () => {
+	await withMigrationFixture(async ({ homeDir, agentDir }) => {
+		const legacyAgentDir = path.join(homeDir, LEGACY_AGENT_PATH);
+		const legacyHistoryDir = path.join(legacyAgentDir, HISTORY_DIRECTORY_NAME);
+		mkdirSync(legacyHistoryDir, { recursive: true });
+		writeFileSync(path.join(legacyHistoryDir, "global.json"), SYNTHETIC_HISTORY);
+		await prepareLegacyProfileMigration({ homeDir, agentDir });
+		const snapshotDir = path.join(legacyAgentDir, MIGRATION_BUNDLE_NAME, SNAPSHOT_DIRECTORY_NAME);
+		rmSync(snapshotDir, { recursive: true });
+		const externalSnapshotDir = path.join(homeDir, "external-snapshot");
+		mkdirSync(externalSnapshotDir);
+		writeFileSync(path.join(externalSnapshotDir, "global.json"), "external bytes\n");
+		symlinkSync(externalSnapshotDir, snapshotDir);
+		const laterAgentDir = path.join(path.dirname(agentDir), "later-profile");
+
+		await assert.rejects(prepareLegacyProfileMigration({ homeDir, agentDir: laterAgentDir }));
+
+		assert.equal(existsSync(path.join(laterAgentDir, HISTORY_DIRECTORY_NAME)), false);
 	});
 });
 

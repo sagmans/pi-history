@@ -3,9 +3,9 @@
 Ghost completion for prompt history across [pi](https://github.com/earendil-works/pi-coding-agent) sessions.
 
 `pi-history` records your real prompts. Two isolation levels — `project`
-(default: one history per project) and `global` (one host-wide history) —
-configured under `<Pi agent directory>/pi-history/` (normally
-`~/.pi/agent/pi-history/`).
+(default: one history per project) and `global` (one history shared by all
+projects in the active Pi profile) — configured under
+`<Pi agent directory>/pi-history/` (normally `~/.pi/agent/pi-history/`).
 
 ## Features
 
@@ -62,7 +62,8 @@ Each `PI_CODING_AGENT_DIR` profile has separate configuration and history.
 On the first TUI start after upgrading, pi-history freezes recognized files from
 the former default location into a versioned migration snapshot. A profile with
 no existing `pi-history/` directory imports that frozen snapshot; any existing
-target, including an empty directory, wins unchanged.
+target, including an empty directory, wins unchanged. Interrupted owned
+migration work resumes from private claims without replacing concurrent files.
 
 The snapshot can contain pre-upgrade history previously mixed across profiles,
 and each import creates another private copy. To stop future imports, remove
