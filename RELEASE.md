@@ -63,9 +63,10 @@ notes.
 
 ## npm trusted publishing
 
-The npm package accepts publishes only from the `release` workflow of this
-repository on the `npm-release` environment, configured under package
-settings on npmjs.com. Package settings must also be set to "Require
+After the scoped-package bootstrap, the npm package accepts publishes only
+from the `release` workflow of this repository on the `npm-release`
+environment, configured under package settings on npmjs.com. Package settings
+must also be set to "Require
 two-factor authentication and disallow tokens" so the OIDC flow is the only
 publish path. The release owner is the sole package maintainer.
 
@@ -74,20 +75,51 @@ deployment policy, admin-only tag ruleset) are provisioned by
 [`scripts/release/setup-github-oidc-release.sh`](scripts/release/setup-github-oidc-release.sh),
 which is idempotent and reusable for other repositories.
 
-One-time bootstrap: trusted publishing requires the package to already exist
-on npm, so the first release is published manually by the release owner
-(`npm publish --access public` on the tagged SHA), after which the trusted
-publisher is configured and automation takes over.
+### Scoped-package bootstrap (`v0.1.3` only)
+
+npm requires a package to exist before trusted publishing can be configured.
+The release workflow therefore verifies `v0.1.3` but skips its publish job.
+After that tag's verify job succeeds, the release owner publishes from a clean
+checkout of the exact signed tag:
+
+```bash
+npm publish --access public
+```
+
+Local publication cannot generate npm provenance; provenance begins with later
+OIDC releases from the supported GitHub-hosted runner. Then configure
+`@sagmans/pi-history` to trust this repository's
+`.github/workflows/release.yml` workflow and `npm-release` environment, with
+`npm publish` explicitly allowed. Require two-factor authentication and
+disallow tokens before any later release. Releases after `v0.1.3` use the
+approval-gated OIDC publish job and automatic provenance normally.
+
+### Retire the unscoped package
+
+Only after `@sagmans/pi-history@0.1.3` is publicly installable and its package
+metadata points to this repository, deprecate—never unpublish—the old package:
+
+```bash
+npm deprecate "pi-history@*" "Moved to @sagmans/pi-history; migrate with: pi remove npm:pi-history && pi install npm:@sagmans/pi-history"
+```
+
+Existing pi settings keep the old npm identity until users migrate explicitly.
+Runtime configuration and prompt history remain under
+`~/.pi/agent/pi-history/`; migration must not read or rewrite them.
 
 ## Rollback
 
 - **Bad tag/release:** keep the signed tag, source SHA, and GitHub release
   record intact. npm versions are immutable, and deleting these references
   breaks the source/notes chain and allows accidental tag-name reuse.
-  Instead, deprecate the broken npm version with a reason and replacement
-  (`npm deprecate pi-history@<version> "<reason>; use pi-history@<replacement>
-  instead"`), edit the GitHub release notes to mark the version broken and
-  point at the replacement, and publish a patch release restoring correct
+  Instead, deprecate the broken npm version with a reason and replacement:
+
+  ```bash
+  npm deprecate "@sagmans/pi-history@<version>" "<reason>; use @sagmans/pi-history@<replacement> instead"
+  ```
+
+  Edit the GitHub release notes to mark the version broken and point at the
+  replacement, and publish a patch release restoring correct
   behavior (forward-fix preferred over history rewrite or unpublish). This
   preserves version → tag → source SHA → warning → replacement traceability.
 - **Bad default/config:** patch release; never silently rewrite user config

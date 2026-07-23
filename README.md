@@ -17,10 +17,20 @@ configured under `~/.pi/agent/pi-history/`.
 ## Install
 
 ```bash
-pi install npm:pi-history
+pi install npm:@sagmans/pi-history
 ```
 
 Install from npm so pi only offers updates after a published release.
+
+Existing `pi-history` installs do not switch npm identities automatically. Migrate once:
+
+```bash
+pi remove npm:pi-history
+pi install npm:@sagmans/pi-history
+```
+
+The package rename does not move or rewrite configuration or prompt history under
+`~/.pi/agent/pi-history/`. Do not install both npm identities at once.
 
 ## Supported environments
 
