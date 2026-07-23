@@ -70,10 +70,10 @@ must also be set to "Require
 two-factor authentication and disallow tokens" so the OIDC flow is the only
 publish path. The release owner is the sole package maintainer.
 
-The GitHub-side pieces (approval-gated `npm-release` environment, tag
-deployment policy, admin-only tag ruleset) are provisioned by
-[`scripts/release/setup-github-oidc-release.sh`](scripts/release/setup-github-oidc-release.sh),
-which is idempotent and reusable for other repositories.
+The reusable [CLI-only setup guide](docs/npm-release-setup.md) provisions
+npm and GitHub controls through independent scripts under [`scripts/npm/`](scripts/npm/).
+The GitHub step is idempotent; every remote mutation supports dry-run and
+requires an action-specific confirmation value.
 
 ### Scoped-package bootstrap (`v0.1.3` only)
 

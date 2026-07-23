@@ -13,6 +13,7 @@ npm run check       # biome lint + format
 npm run check:fix   # apply biome fixes
 npm run typecheck
 npm run test
+npm run test:npm     # isolated fake-CLI coverage for npm release setup
 npm run verify       # deterministic offline checks
 npm run audit        # network-dependent high-severity dependency gate
 npm run verify:ci    # complete maintainer and CI gate
@@ -23,6 +24,13 @@ npm run smoke:herdr  # disposable real-TUI smoke; Herdr maintainers only
 matrix leg. `npm run verify` is its deterministic offline subset. The Herdr
 smoke remains outside CI; see
 [`docs/maintainer-smoke.md`](https://github.com/sagmans/pi-history/blob/main/docs/maintainer-smoke.md).
+
+The npm setup shell suite is part of `npm test`; it never contacts npm or
+GitHub. Maintainers with ShellCheck available can additionally run:
+
+```bash
+shellcheck -x --shell=bash scripts/npm/*.sh scripts/npm/lib/*.sh test/npm/*.sh
+```
 
 The audit currently reports moderate `GHSA-j3f2-48v5-ccww` in the dev-only
 `protobufjs` copy nested under pi; reassess it with every pi dependency update.
