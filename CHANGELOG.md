@@ -6,6 +6,8 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-23
+
 ### Added
 
 - Versioned, deterministic, privacy-safe `/pi-history status` diagnostics.
@@ -40,6 +42,7 @@ All notable changes to this project are documented here. This format follows
 - `/pi-history status` (metadata only) and `/pi-history clear` (confirmed wipe with a clear marker so older open sessions cannot restore entries).
 - Graceful fallback when ghost completion editor support is unavailable; `Ctrl+R` remains available.
 
-[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/sagmans/pi-history/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/sagmans/pi-history/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/sagmans/pi-history/releases/tag/v0.1.0
