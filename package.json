@@ -33,7 +33,9 @@
 		]
 	},
 	"scripts": {
-		"test": "node --experimental-transform-types --test test/*.test.ts",
+		"test": "npm run test:unit && npm run test:npm",
+		"test:unit": "node --experimental-transform-types --test test/*.test.ts",
+		"test:npm": "bash test/npm/run.sh",
 		"typecheck": "tsc --noEmit",
 		"check": "biome check .",
 		"check:fix": "biome check --write .",

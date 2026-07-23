@@ -6,6 +6,10 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+### Added
+
+- Reusable, CLI-only npm and GitHub trusted-publishing setup scripts with guarded mutations and fake-CLI tests.
+
 ## [0.1.3] - 2026-07-23
 
 ### Changed
