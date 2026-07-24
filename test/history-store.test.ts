@@ -21,6 +21,27 @@ import {
 import { createGlobalIdentity, createProjectIdentity, GLOBAL_SCOPE_KEY } from "../src/project.ts";
 
 const FIXTURE_TIMESTAMP = "2026-07-01T00:00:00.000Z";
+const FIRST_CLEAR_TIMESTAMP = "2026-07-01T00:00:03.000Z";
+const INTERVENING_PROMPT_TIMESTAMP = "2026-07-01T00:00:04.000Z";
+const ROLLED_BACK_CLEAR_TIMESTAMP = "2026-07-01T00:00:01.000Z";
+const POST_CLEAR_PROMPT_TIMESTAMP = "2026-07-01T00:00:05.000Z";
+const LEGACY_HISTORY_SCHEMA_VERSION = 1;
+const GENERATION_HISTORY_SCHEMA_VERSION = 2;
+const INITIAL_CLEAR_GENERATION = 0;
+const FIRST_CLEAR_GENERATION = 1;
+const SECOND_CLEAR_GENERATION = 2;
+const STALE_HIGH_CLEAR_GENERATION = 5;
+const EXHAUSTED_CLEAR_GENERATION = Number.MAX_SAFE_INTEGER;
+const UNSAFE_CLEAR_GENERATION = EXHAUSTED_CLEAR_GENERATION + 1;
+const SENSITIVE_PROMPT = "synthetic sensitive prompt";
+const POST_CLEAR_PROMPT = "synthetic post-clear prompt";
+const LEGACY_PROMPT = "synthetic legacy prompt";
+const LEGACY_ENTRY = {
+	text: LEGACY_PROMPT,
+	createdAt: FIXTURE_TIMESTAMP,
+	updatedAt: FIXTURE_TIMESTAMP,
+	useCount: 1,
+} as const;
 const UNSUPPORTED_SCHEMA_VERSION = HISTORY_SCHEMA_VERSION + 1;
 const INVALID_SCHEMA_VERSIONS: ReadonlyArray<Readonly<{ label: string; value?: unknown }>> = [
 	{ label: "missing" },
@@ -29,6 +50,37 @@ const INVALID_SCHEMA_VERSIONS: ReadonlyArray<Readonly<{ label: string; value?: u
 	{ label: "negative", value: -1 },
 	{ label: "fractional", value: 1.5 },
 ];
+const INVALID_CLEAR_GENERATIONS: ReadonlyArray<Readonly<{ label: string; value?: unknown }>> = [
+	{ label: "missing" },
+	{ label: "string", value: String(FIRST_CLEAR_GENERATION) },
+	{ label: "null", value: null },
+	{ label: "boolean", value: true },
+	{ label: "negative", value: -1 },
+	{ label: "fractional", value: 0.5 },
+	{ label: "unsafe", value: UNSAFE_CLEAR_GENERATION },
+];
+const LEGACY_MIGRATION_CASES = [
+	{
+		label: "without a clear marker",
+		clearedAt: undefined,
+		expectedGeneration: INITIAL_CLEAR_GENERATION,
+	},
+	{
+		label: "with a clear marker",
+		clearedAt: FIXTURE_TIMESTAMP,
+		expectedGeneration: FIRST_CLEAR_GENERATION,
+	},
+] as const;
+const CAUSAL_CLEAR_CASES = [
+	{
+		label: "after clock rollback",
+		secondClearAt: ROLLED_BACK_CLEAR_TIMESTAMP,
+	},
+	{
+		label: "when clear clocks are equal",
+		secondClearAt: FIRST_CLEAR_TIMESTAMP,
+	},
+] as const;
 
 test("missing store loads empty and creates no file until first save", async () => {
 	await withStoreFixture(async ({ storePath, loadStore }) => {
@@ -213,6 +265,42 @@ test("unsupported schema blocks mutations and preserves original bytes", async (
 	});
 });
 
+for (const migrationCase of LEGACY_MIGRATION_CASES) {
+	test(`schema-1 history migrates on first mutation ${migrationCase.label}`, async () => {
+		await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
+			const original = serializeHistory({
+				schemaVersion: LEGACY_HISTORY_SCHEMA_VERSION,
+				projectRoot,
+				createdAt: FIXTURE_TIMESTAMP,
+				updatedAt: FIXTURE_TIMESTAMP,
+				...(migrationCase.clearedAt ? { clearedAt: migrationCase.clearedAt } : {}),
+				entries: [LEGACY_ENTRY],
+			});
+			mkdirSync(path.dirname(storePath), { recursive: true });
+			writeFileSync(storePath, original, "utf8");
+
+			const store = await loadStore({
+				clock: makeClock([FIXTURE_TIMESTAMP, POST_CLEAR_PROMPT_TIMESTAMP]),
+			});
+
+			assert.equal(readFileSync(storePath, "utf8"), original);
+			assert.deepEqual(store.entries, [LEGACY_ENTRY]);
+
+			await store.recordPrompt(POST_CLEAR_PROMPT);
+
+			const saved = JSON.parse(readFileSync(storePath, "utf8"));
+			assert.equal(saved.schemaVersion, GENERATION_HISTORY_SCHEMA_VERSION);
+			assert.equal(saved.clearGeneration, migrationCase.expectedGeneration);
+			assert.equal(saved.clearedAt, migrationCase.clearedAt);
+			assert.deepEqual(
+				saved.entries.map((entry: { text: string }) => entry.text),
+				[POST_CLEAR_PROMPT, LEGACY_PROMPT],
+			);
+			assert.deepEqual(saved.entries[1], LEGACY_ENTRY);
+		});
+	});
+}
+
 test("clear revalidates a newly unsupported schema before replacement", async () => {
 	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
 		const store = await loadStore();
@@ -271,8 +359,9 @@ test("record revalidates a newly unsupported schema before recording", async () 
 test("record revalidates a newly foreign project root before recording", async () => {
 	await withStoreFixture(async ({ storePath, loadStore }) => {
 		const store = await loadStore();
-		const foreign: PromptHistoryFile = {
+		const foreign = {
 			schemaVersion: HISTORY_SCHEMA_VERSION,
+			clearGeneration: INITIAL_CLEAR_GENERATION,
 			projectRoot: "/other/project",
 			createdAt: FIXTURE_TIMESTAMP,
 			updatedAt: FIXTURE_TIMESTAMP,
@@ -295,8 +384,9 @@ test("record revalidates a newly foreign project root before recording", async (
 test("clear revalidates a newly foreign project root before replacement", async () => {
 	await withStoreFixture(async ({ storePath, loadStore }) => {
 		const store = await loadStore();
-		const foreign: PromptHistoryFile = {
+		const foreign = {
 			schemaVersion: HISTORY_SCHEMA_VERSION,
+			clearGeneration: INITIAL_CLEAR_GENERATION,
 			projectRoot: "/other/project",
 			createdAt: FIXTURE_TIMESTAMP,
 			updatedAt: FIXTURE_TIMESTAMP,
@@ -364,11 +454,108 @@ for (const invalidSchema of INVALID_SCHEMA_VERSIONS) {
 	});
 }
 
+for (const invalidGeneration of INVALID_CLEAR_GENERATIONS) {
+	test(`schema-2 ${invalidGeneration.label} clear generation is recoverable corruption`, async () => {
+		await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
+			const raw: Record<string, unknown> = {
+				schemaVersion: GENERATION_HISTORY_SCHEMA_VERSION,
+				projectRoot,
+				createdAt: FIXTURE_TIMESTAMP,
+				updatedAt: FIXTURE_TIMESTAMP,
+				entries: [],
+			};
+			if (invalidGeneration.value !== undefined) {
+				raw.clearGeneration = invalidGeneration.value;
+			}
+			mkdirSync(path.dirname(storePath), { recursive: true });
+			writeFileSync(storePath, serializeHistory(raw), "utf8");
+
+			const store = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
+
+			assert.equal(store.writeBlockedReason, "corrupt_history");
+
+			const clearResult = await store.clear();
+			const saved = JSON.parse(readFileSync(storePath, "utf8"));
+
+			assert.deepEqual(clearResult, { kind: "cleared" });
+			assert.equal(store.writeBlocked, false);
+			assert.equal(saved.schemaVersion, GENERATION_HISTORY_SCHEMA_VERSION);
+			assert.equal(saved.clearGeneration, FIRST_CLEAR_GENERATION);
+		});
+	});
+}
+
+test("corrupt-history recovery clear supersedes stale higher-generation memory", async () => {
+	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
+		mkdirSync(path.dirname(storePath), { recursive: true });
+		writeFileSync(
+			storePath,
+			serializeHistory({
+				schemaVersion: GENERATION_HISTORY_SCHEMA_VERSION,
+				clearGeneration: STALE_HIGH_CLEAR_GENERATION,
+				projectRoot,
+				createdAt: FIXTURE_TIMESTAMP,
+				updatedAt: FIXTURE_TIMESTAMP,
+				clearedAt: FIXTURE_TIMESTAMP,
+				entries: [LEGACY_ENTRY],
+			}),
+			"utf8",
+		);
+		const stale = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
+		writeFileSync(
+			storePath,
+			serializeHistory({
+				schemaVersion: GENERATION_HISTORY_SCHEMA_VERSION,
+				projectRoot,
+				createdAt: FIXTURE_TIMESTAMP,
+				updatedAt: FIXTURE_TIMESTAMP,
+				entries: [],
+			}),
+			"utf8",
+		);
+		const recovery = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
+		assert.equal(recovery.writeBlockedReason, "corrupt_history");
+
+		assert.deepEqual(await recovery.clear(), { kind: "cleared" });
+		await stale.recordPrompt(POST_CLEAR_PROMPT);
+
+		const saved = JSON.parse(readFileSync(storePath, "utf8"));
+		assert.deepEqual(
+			saved.entries.map((entry: { text: string }) => entry.text),
+			[POST_CLEAR_PROMPT],
+		);
+		assert.equal(saved.clearGeneration, FIRST_CLEAR_GENERATION);
+	});
+});
+
+test("clear fails without replacing history when clear generation is exhausted", async () => {
+	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
+		const original = serializeHistory({
+			schemaVersion: GENERATION_HISTORY_SCHEMA_VERSION,
+			clearGeneration: EXHAUSTED_CLEAR_GENERATION,
+			projectRoot,
+			createdAt: FIXTURE_TIMESTAMP,
+			updatedAt: FIXTURE_TIMESTAMP,
+			clearedAt: FIXTURE_TIMESTAMP,
+			entries: [LEGACY_ENTRY],
+		});
+		mkdirSync(path.dirname(storePath), { recursive: true });
+		writeFileSync(storePath, original, "utf8");
+
+		const store = await loadStore({ clock: () => POST_CLEAR_PROMPT_TIMESTAMP });
+
+		assert.equal(store.writeBlocked, false);
+		await assert.rejects(store.clear(), RangeError);
+		assert.equal(readFileSync(storePath, "utf8"), original);
+		assert.deepEqual(store.entries, [LEGACY_ENTRY]);
+	});
+});
+
 test("malformed schema-1 content remains recoverable corruption", async () => {
 	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
 		// Version matches but an entry lacks required fields, so normalization must fail.
 		const raw = {
-			schemaVersion: HISTORY_SCHEMA_VERSION,
+			schemaVersion: LEGACY_HISTORY_SCHEMA_VERSION,
 			projectRoot,
 			createdAt: FIXTURE_TIMESTAMP,
 			updatedAt: FIXTURE_TIMESTAMP,
@@ -390,11 +577,12 @@ test("malformed schema-1 content remains recoverable corruption", async () => {
 
 test("project mismatch blocks writes instead of merging histories", async () => {
 	await withStoreFixture(async ({ storePath, loadStore }) => {
-		const foreign: PromptHistoryFile = {
+		const foreign = {
 			schemaVersion: HISTORY_SCHEMA_VERSION,
+			clearGeneration: INITIAL_CLEAR_GENERATION,
 			projectRoot: "/other/project",
-			createdAt: "2026-07-01T00:00:00.000Z",
-			updatedAt: "2026-07-01T00:00:00.000Z",
+			createdAt: FIXTURE_TIMESTAMP,
+			updatedAt: FIXTURE_TIMESTAMP,
 			entries: [],
 		};
 		mkdirSync(path.dirname(storePath), { recursive: true });
@@ -497,6 +685,36 @@ test("clear prevents older open sessions from resurrecting prompts", async () =>
 		);
 	});
 });
+
+for (const clearCase of CAUSAL_CLEAR_CASES) {
+	test(`later clear prevents stale-session resurrection ${clearCase.label}`, async () => {
+		const firstClock = makeClock([
+			FIXTURE_TIMESTAMP,
+			FIRST_CLEAR_TIMESTAMP,
+			INTERVENING_PROMPT_TIMESTAMP,
+			clearCase.secondClearAt,
+		]);
+		const staleClock = makeClock([INTERVENING_PROMPT_TIMESTAMP, POST_CLEAR_PROMPT_TIMESTAMP]);
+		await withStoreFixture(async ({ storePath, loadStore }) => {
+			const first = await loadStore({ clock: firstClock });
+			await first.clear();
+			await first.recordPrompt(SENSITIVE_PROMPT);
+			const stale = await loadStore({ clock: staleClock });
+
+			await first.clear();
+			await stale.recordPrompt(POST_CLEAR_PROMPT);
+			const reloaded = await loadStore();
+			const saved = JSON.parse(readFileSync(storePath, "utf8"));
+
+			assert.deepEqual(
+				reloaded.entries.map((entry) => entry.text),
+				[POST_CLEAR_PROMPT],
+			);
+			assert.equal(saved.clearGeneration, SECOND_CLEAR_GENERATION);
+			assert.equal(saved.clearedAt, clearCase.secondClearAt);
+		});
+	});
+}
 
 test("stale lock owned by a dead process is reclaimed", async () => {
 	await withStoreFixture(async ({ storePath, loadStore }) => {

@@ -6,6 +6,10 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Made confirmed prompt-history clears monotonic across clock changes and corruption recovery so stale open sessions cannot restore cleared prompts; existing history migrates without eager rewrites.
+
 ## [0.1.4] - 2026-07-23
 
 ### Added
