@@ -44,6 +44,7 @@ export type HistoryLockOwner = {
 	pid: number;
 	host: string;
 	createdAt: string;
+	token: string;
 };
 
 // Re-exported under the storage-facing name so callers depend on storage
@@ -133,7 +134,7 @@ export class HistoryStore {
 			};
 		}
 
-		return withHistoryFileLock(this.identity.historyFilePath, async () => {
+		return withHistoryFileLock(this.identity.historyFilePath, async (fence) => {
 			const timestamp = this.now();
 			const latest = await loadHistoryFile({
 				identity: this.identity,
@@ -164,7 +165,7 @@ export class HistoryStore {
 				maxEntries: this.maxEntries,
 				now: timestamp,
 			});
-			await writeHistoryFile(this.identity.historyFilePath, this.history);
+			await writeHistoryFile(this.identity.historyFilePath, this.history, fence);
 			return { kind: "recorded", entryCount: this.history.entries.length };
 		});
 	}
@@ -176,7 +177,7 @@ export class HistoryStore {
 		const existingBlock = clearBlockResult(this.blockReason, this.blockWarnings);
 		if (existingBlock) return existingBlock;
 
-		return withHistoryFileLock(this.identity.historyFilePath, async () => {
+		return withHistoryFileLock(this.identity.historyFilePath, async (fence) => {
 			const timestamp = this.now();
 			// Validate under the replacement lock so another version cannot race in a new schema.
 			const latest = await loadHistoryFile({
@@ -201,7 +202,7 @@ export class HistoryStore {
 			};
 			this.blockReason = undefined;
 			this.blockWarnings = [];
-			await writeHistoryFile(this.identity.historyFilePath, this.history);
+			await writeHistoryFile(this.identity.historyFilePath, this.history, fence);
 			return { kind: "cleared" };
 		});
 	}
@@ -508,7 +509,11 @@ function normalizeEntry(raw: unknown): HistoryEntry | undefined {
 	};
 }
 
-async function writeHistoryFile(filePath: string, history: PromptHistoryFile): Promise<void> {
+async function writeHistoryFile(
+	filePath: string,
+	history: PromptHistoryFile,
+	fence?: HistoryLockFence,
+): Promise<void> {
 	await ensureHistoryDirectory(filePath);
 	const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
 	const data = `${JSON.stringify(history, null, 2)}\n`;
@@ -518,6 +523,8 @@ async function writeHistoryFile(filePath: string, history: PromptHistoryFile): P
 			mode: PRIVATE_FILE_MODE,
 		});
 		await chmod(tempPath, PRIVATE_FILE_MODE);
+		// Fence before rename: a displaced writer must not publish over newer state.
+		await fence?.();
 		await rename(tempPath, filePath);
 	} catch (error) {
 		await rm(tempPath, { force: true });
@@ -525,17 +532,20 @@ async function writeHistoryFile(filePath: string, history: PromptHistoryFile): P
 	}
 }
 
-async function withHistoryFileLock<Result>(
+export type HistoryLockFence = () => Promise<void>;
+
+export async function withHistoryFileLock<Result>(
 	filePath: string,
-	operation: () => Promise<Result>,
+	operation: (fence: HistoryLockFence) => Promise<Result>,
 ): Promise<Result> {
 	await ensureHistoryDirectory(filePath);
 	const lockPath = `${filePath}.lock`;
-	await acquireHistoryLock(lockPath);
+	const owner = await acquireHistoryLock(lockPath);
+	const fence = () => assertLockOwnership(lockPath, owner.token);
 	try {
-		return await operation();
+		return await operation(fence);
 	} finally {
-		await rm(lockPath, { force: true, recursive: true });
+		await releaseHistoryLock(lockPath, owner.token);
 	}
 }
 
@@ -545,19 +555,18 @@ async function ensureHistoryDirectory(filePath: string): Promise<void> {
 	await chmod(directory, PRIVATE_DIR_MODE);
 }
 
-async function acquireHistoryLock(lockPath: string): Promise<void> {
+async function acquireHistoryLock(lockPath: string): Promise<HistoryLockOwner> {
 	const startedAt = Date.now();
 	for (;;) {
 		try {
 			await mkdir(lockPath, { mode: PRIVATE_DIR_MODE });
 			try {
 				await chmod(lockPath, PRIVATE_DIR_MODE);
-				await writeLockOwner(lockPath);
+				return await writeLockOwner(lockPath);
 			} catch (error) {
 				await rm(lockPath, { force: true, recursive: true });
 				throw error;
 			}
-			return;
 		} catch (error) {
 			if (!hasErrorCode(error, "EEXIST")) throw error;
 			if (await reclaimStaleLock(lockPath)) continue;
@@ -569,11 +578,14 @@ async function acquireHistoryLock(lockPath: string): Promise<void> {
 	}
 }
 
-async function writeLockOwner(lockPath: string): Promise<void> {
+// The token fences this lock instance: release and publication must match it,
+// so a displaced owner can never delete or overwrite a successor's lock.
+async function writeLockOwner(lockPath: string): Promise<HistoryLockOwner> {
 	const owner: HistoryLockOwner = {
 		pid: process.pid,
 		host: hostname(),
 		createdAt: currentIsoTimestamp(),
+		token: randomUUID(),
 	};
 	const ownerPath = path.join(lockPath, LOCK_OWNER_FILE);
 	await writeFile(ownerPath, `${JSON.stringify(owner)}\n`, {
@@ -581,6 +593,20 @@ async function writeLockOwner(lockPath: string): Promise<void> {
 		mode: PRIVATE_FILE_MODE,
 	});
 	await chmod(ownerPath, PRIVATE_FILE_MODE);
+	return owner;
+}
+
+async function assertLockOwnership(lockPath: string, token: string): Promise<void> {
+	const owner = await readLockOwner(lockPath);
+	if (owner?.token !== token) {
+		throw new Error("history lock ownership lost");
+	}
+}
+
+async function releaseHistoryLock(lockPath: string, token: string): Promise<void> {
+	const owner = await readLockOwner(lockPath);
+	if (owner?.token !== token) return;
+	await rm(lockPath, { force: true, recursive: true });
 }
 
 async function reclaimStaleLock(lockPath: string): Promise<boolean> {
@@ -612,24 +638,29 @@ function normalizeLockOwner(raw: unknown): HistoryLockOwner | undefined {
 	if (!isPositiveInteger(raw.pid)) return undefined;
 	if (typeof raw.host !== "string") return undefined;
 	if (typeof raw.createdAt !== "string") return undefined;
+	if (typeof raw.token !== "string" || raw.token.length === 0) return undefined;
 	return {
 		pid: raw.pid,
 		host: raw.host,
 		createdAt: raw.createdAt,
+		token: raw.token,
 	};
 }
 
 function lockOwnerIsActive(owner: HistoryLockOwner): boolean {
+	// Same-host liveness is decidable, so a live owner is never evicted by age.
+	if (owner.host === hostname()) {
+		try {
+			process.kill(owner.pid, 0);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+	// Cross-host liveness is undecidable locally; bound takeover by owner age.
 	const createdAtMs = Date.parse(owner.createdAt);
 	if (!Number.isFinite(createdAtMs)) return false;
-	if (Date.now() - createdAtMs > LOCK_STALE_MS) return false;
-	if (owner.host !== hostname()) return true;
-	try {
-		process.kill(owner.pid, 0);
-		return true;
-	} catch {
-		return false;
-	}
+	return Date.now() - createdAtMs <= LOCK_STALE_MS;
 }
 
 function clearBlockResult(
