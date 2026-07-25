@@ -44,6 +44,34 @@ test_hardened_publish_command_is_required() {
 	assert_contains "${OUTPUT}" 'provenance and public access'
 }
 
+test_commented_publish_flags_are_rejected() {
+	write_workflow $'on:\n  push:\n    tags: ["v*"]\njobs:\n  publish:\n    environment: npm-release\n    permissions:\n      id-token: write\n    steps:\n      - run: |\n          npm publish # --provenance --access public'
+	run_target validate-workflow.sh
+	assert_failure || return 1
+	assert_contains "${OUTPUT}" 'provenance and public access'
+}
+
+test_publish_text_without_execution_is_rejected() {
+	write_workflow $'on:\n  push:\n    tags: ["v*"]\njobs:\n  publish:\n    environment: npm-release\n    permissions:\n      id-token: write\n    steps:\n      - run: echo npm publish --provenance --access public'
+	run_target validate-workflow.sh
+	assert_failure || return 1
+	assert_contains "${OUTPUT}" 'provenance and public access'
+}
+
+test_publish_step_with_extra_shell_command_is_rejected() {
+	write_workflow $'on:\n  push:\n    tags: ["v*"]\njobs:\n  publish:\n    environment: npm-release\n    permissions:\n      id-token: write\n    steps:\n      - run: npm publish --provenance --access public; npm publish'
+	run_target validate-workflow.sh
+	assert_failure || return 1
+	assert_contains "${OUTPUT}" 'provenance and public access'
+}
+
+test_multiple_publish_steps_are_rejected() {
+	write_workflow $'on:\n  push:\n    tags: ["v*"]\njobs:\n  publish:\n    environment: npm-release\n    permissions:\n      id-token: write\n    steps:\n      - run: npm publish --provenance --access public\n      - run: npm publish'
+	run_target validate-workflow.sh
+	assert_failure || return 1
+	assert_contains "${OUTPUT}" 'single hardened npm publish step'
+}
+
 test_misleading_run_text_cannot_supply_controls() {
 	write_workflow $'on:\n  push:\n    tags: ["v*"]\njobs:\n  publish:\n    steps:\n      - run: npm publish --provenance --access public\n      - run: |\n          environment: npm-release\n          id-token: write'
 	run_target validate-workflow.sh
@@ -98,6 +126,10 @@ run_test 'tag trigger is required' test_tag_trigger_is_required
 run_test 'configured environment is required' test_environment_is_required
 run_test 'OIDC token permission is required' test_oidc_permission_is_required
 run_test 'publish requires provenance and public access' test_hardened_publish_command_is_required
+run_test 'commented publish flags are rejected' test_commented_publish_flags_are_rejected
+run_test 'publish text without execution is rejected' test_publish_text_without_execution_is_rejected
+run_test 'publish step with extra shell command is rejected' test_publish_step_with_extra_shell_command_is_rejected
+run_test 'multiple publish steps are rejected' test_multiple_publish_steps_are_rejected
 run_test 'misleading run text cannot supply controls' test_misleading_run_text_cannot_supply_controls
 run_test 'commented controls are rejected' test_commented_controls_are_rejected
 run_test 'duplicate jobs are rejected' test_duplicate_jobs_are_rejected

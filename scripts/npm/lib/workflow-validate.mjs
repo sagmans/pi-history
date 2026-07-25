@@ -8,6 +8,7 @@
 import fs from "node:fs";
 
 const [workflowPath, expectedEnvironment] = process.argv.slice(2);
+const REQUIRED_PUBLISH_COMMAND = "npm publish --provenance --access public";
 
 const fail = (message) => {
 	console.error(`error: workflow must ${message}`);
@@ -167,7 +168,9 @@ if (environment !== expectedEnvironment) fail("use the configured environment");
 const permissions = publishJob.permissions ?? document.permissions;
 if (!isRecord(permissions) || permissions["id-token"] !== "write") fail("grant id-token: write");
 
-const publishStep = publishJob.steps.find(isPublishStep);
-if (!publishStep.run.includes("--provenance") || !publishStep.run.includes("--access public")) {
+const publishSteps = publishJob.steps.filter(isPublishStep);
+if (publishSteps.length !== 1) fail("define a single hardened npm publish step");
+const [publishStep] = publishSteps;
+if (publishStep.run.trim() !== REQUIRED_PUBLISH_COMMAND) {
 	fail("publish with provenance and public access");
 }
