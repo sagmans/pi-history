@@ -32,7 +32,8 @@ changes; patch bumps are fixes only. The git tag (`vX.Y.Z`) and
    history for a release check.
 5. README accuracy pass: every documented command/path/config key still
    behaves as written; profile-storage changes include disposable default and
-   custom `PI_CODING_AGENT_DIR` coverage.
+   custom `PI_CODING_AGENT_DIR` coverage. Persisted-format changes must agree
+   with [history-format and downgrade behavior](docs/history-format.md).
 6. Changelog roll-forward: `CHANGELOG.md` carries a new dated `[X.Y.Z]`
    section for the target version with the relevant `Unreleased` entries,
    and exactly one `Unreleased` section remains.
