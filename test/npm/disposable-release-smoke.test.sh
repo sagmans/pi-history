@@ -54,6 +54,24 @@ prepare_hostile_profiles() {
 	write_fake_pi
 }
 
+assert_hostile_profiles_untouched() {
+	[[ -f "${HOSTILE_HOME}/marker" ]] || return 1
+	[[ -f "${HOSTILE_AGENT_DIR}/marker" ]] || return 1
+	[[ -f "${HOSTILE_SESSION_DIR}/marker" ]] || return 1
+	[[ -f "${HOSTILE_PACKAGE_DIR}/marker" ]] || return 1
+}
+
+# PI_PACKAGE_DIR is pi's own install root, not user storage: the harness must
+# pass it through untouched instead of confining it.
+assert_package_dir_passed_through() {
+	local invocation_count line_number
+	invocation_count="$(awk 'END { print NR }' "${FAKE_LOG}")"
+	for ((line_number = 1; line_number <= invocation_count; line_number += 1)); do
+		read_invocation "${line_number}"
+		assert_equal "${INVOCATION_PACKAGE_DIR}" "${HOSTILE_PACKAGE_DIR}" || return 1
+	done
+}
+
 run_release_smoke() {
 	local mode="${1:-success}"
 	set +e
@@ -113,14 +131,12 @@ test_success_isolates_full_lifecycle() {
 	local install_home="${INVOCATION_HOME}"
 	local install_agent_dir="${INVOCATION_AGENT_DIR}"
 	local install_session_dir="${INVOCATION_SESSION_DIR}"
-	local install_package_dir="${INVOCATION_PACKAGE_DIR}"
 	local disposable_root
 	disposable_root="$(dirname "${install_home}")"
 	assert_equal "${INVOCATION_COMMAND}" 'install' || return 1
 	assert_equal "${INVOCATION_ARGUMENT}" "${CANDIDATE_SPEC}" || return 1
 	assert_equal "${install_agent_dir}" "${disposable_root}/agent" || return 1
 	assert_equal "${install_session_dir}" "${disposable_root}/sessions" || return 1
-	assert_equal "${install_package_dir}" "${disposable_root}/packages" || return 1
 	[[ "${disposable_root}" == "${TEST_TMP}"/pi-history-release-smoke.* ]] || return 1
 
 	local invocation_count
@@ -131,10 +147,10 @@ test_success_isolates_full_lifecycle() {
 		assert_equal "${INVOCATION_HOME}" "${install_home}" || return 1
 		assert_equal "${INVOCATION_AGENT_DIR}" "${install_agent_dir}" || return 1
 		assert_equal "${INVOCATION_SESSION_DIR}" "${install_session_dir}" || return 1
-		assert_equal "${INVOCATION_PACKAGE_DIR}" "${install_package_dir}" || return 1
 		assert_equal "${INVOCATION_COMMAND}" '--no-session' || return 1
 		assert_equal "${INVOCATION_ARGUMENT}" '' || return 1
 	done
+	assert_package_dir_passed_through || return 1
 	assert_disposable_root_removed "${disposable_root}" || return 1
 	assert_hostile_profiles_untouched
 }

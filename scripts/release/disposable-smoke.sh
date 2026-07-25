@@ -7,7 +7,6 @@ readonly ROOT_TEMPLATE='pi-history-release-smoke.XXXXXX'
 readonly HOME_DIR_NAME='home'
 readonly AGENT_DIR_NAME='agent'
 readonly SESSION_DIR_NAME='sessions'
-readonly PACKAGE_DIR_NAME='packages'
 readonly NO_SESSION_FLAG='--no-session'
 readonly EXIT_INTERRUPT='130'
 readonly EXIT_TERMINATE='143'
@@ -44,10 +43,12 @@ disposable_root="$(mktemp -d "${TMPDIR:-/tmp}/${ROOT_TEMPLATE}")"
 export HOME="${disposable_root}/${HOME_DIR_NAME}"
 export PI_CODING_AGENT_DIR="${disposable_root}/${AGENT_DIR_NAME}"
 export PI_CODING_AGENT_SESSION_DIR="${disposable_root}/${SESSION_DIR_NAME}"
-export PI_PACKAGE_DIR="${disposable_root}/${PACKAGE_DIR_NAME}"
 export PI_SKIP_VERSION_CHECK='1'
 export PI_TELEMETRY='0'
-mkdir -p -- "${HOME}" "${PI_CODING_AGENT_DIR}" "${PI_CODING_AGENT_SESSION_DIR}" "${PI_PACKAGE_DIR}"
+mkdir -p -- "${HOME}" "${PI_CODING_AGENT_DIR}" "${PI_CODING_AGENT_SESSION_DIR}"
+# PI_PACKAGE_DIR is pi's own install root: pi resolves builtin assets (themes)
+# from it, and user state already stays under the agent directory, so the
+# harness must leave it untouched rather than confine it.
 
 pi install "${candidate_spec}"
 
