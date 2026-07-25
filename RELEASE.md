@@ -15,14 +15,21 @@ changes; patch bumps are fixes only. The git tag (`vX.Y.Z`) and
 2. Full CI matrix green on the exact merged SHA: Ubuntu + macOS ×
    Node 22.19.0 + 24, audit gate included.
 3. `npm run verify:ci` green locally for the maintainer.
-4. Install smoke in a disposable pi home against the exact SHA:
+4. Install and exercise the exact SHA through the disposable release harness:
 
    ```bash
-   HOME=$(mktemp -d) pi install git:github.com/sagmans/pi-history@<sha>
+   bash scripts/release/disposable-smoke.sh \
+     'git:github.com/sagmans/pi-history@<sha>'
    ```
 
-   Exercise: prompt capture, restart persistence, `/pi-history status`,
+   The harness retains one private root through install and both Pi launches,
+   explicitly overrides every Pi storage path, and removes that root after
+   success, failure, or interruption. Follow its synthetic-data checklist for
+   prompt capture, restart persistence, `/pi-history status`,
    `/pi-history clear`, `Ctrl+R`, ghost completion or its graceful fallback.
+   This uses the same profile-isolation boundary as the canonical
+   [maintainer smoke test](docs/maintainer-smoke.md); never use real prompt
+   history for a release check.
 5. README accuracy pass: every documented command/path/config key still
    behaves as written; profile-storage changes include disposable default and
    custom `PI_CODING_AGENT_DIR` coverage.
