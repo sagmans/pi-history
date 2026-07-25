@@ -1,11 +1,14 @@
 import { strict as assert } from "node:assert";
 import {
+	chmodSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
 	statSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
@@ -17,6 +20,7 @@ import {
 	HISTORY_SCHEMA_VERSION,
 	loadHistoryStore,
 	type PromptHistoryFile,
+	removeOrphanedTempArtifacts,
 	withHistoryFileLock,
 } from "../src/history-store.ts";
 import { createGlobalIdentity, createProjectIdentity, GLOBAL_SCOPE_KEY } from "../src/project.ts";
@@ -796,6 +800,69 @@ for (const clearCase of CAUSAL_CLEAR_CASES) {
 		});
 	});
 }
+
+test("clear removes crash-orphaned temp artifacts for the active history", async () => {
+	await withStoreFixture(async ({ storePath, loadStore }) => {
+		const store = await loadStore();
+		await store.recordPrompt("alpha");
+		const orphanPath = `${storePath}.12345.67890.tmp`;
+		writeFileSync(orphanPath, serializeHistory({ entries: [{ text: SENSITIVE_PROMPT }] }), {
+			mode: 0o600,
+		});
+
+		assert.deepEqual(await store.clear(), { kind: "cleared" });
+
+		assert.equal(existsSync(orphanPath), false);
+		assert.equal(existsSync(storePath), true);
+		assert.equal(statSync(storePath).mode & 0o777, 0o600);
+	});
+});
+
+test("clear preserves unsafe or unrelated temp-shaped entries", async () => {
+	await withStoreFixture(async ({ storePath, loadStore }) => {
+		const store = await loadStore();
+		await store.recordPrompt("alpha");
+		const targetPath = `${storePath}.target`;
+		const symlinkPath = `${storePath}.11111.22222.tmp`;
+		const directoryPath = `${storePath}.33333.44444.tmp`;
+		const malformedPath = `${storePath}.notapid.tmp`;
+		const unrelatedPath = `${storePath}.unrelated`;
+		writeFileSync(targetPath, "target", { mode: 0o600 });
+		symlinkSync(targetPath, symlinkPath);
+		mkdirSync(directoryPath);
+		writeFileSync(malformedPath, "malformed", { mode: 0o600 });
+		writeFileSync(unrelatedPath, "unrelated", { mode: 0o600 });
+
+		assert.deepEqual(await store.clear(), { kind: "cleared" });
+
+		assert.equal(lstatSync(symlinkPath).isSymbolicLink(), true);
+		assert.equal(statSync(directoryPath).isDirectory(), true);
+		assert.equal(readFileSync(malformedPath, "utf8"), "malformed");
+		assert.equal(readFileSync(unrelatedPath, "utf8"), "unrelated");
+		assert.equal(readFileSync(targetPath, "utf8"), "target");
+	});
+});
+
+test("orphan cleanup fails safely when an artifact cannot be removed", async () => {
+	// Root bypasses directory permission bits, so this failure mode is untestable there.
+	if (process.getuid?.() === 0) return;
+	await withStoreFixture(async ({ storePath }) => {
+		mkdirSync(path.dirname(storePath), { recursive: true });
+		const orphanPath = `${storePath}.12345.67890.tmp`;
+		writeFileSync(orphanPath, "orphan", { mode: 0o600 });
+		const directory = path.dirname(storePath);
+		chmodSync(directory, 0o500);
+		try {
+			await assert.rejects(
+				removeOrphanedTempArtifacts(storePath),
+				/unable to remove orphaned history artifacts/,
+			);
+			assert.equal(readFileSync(orphanPath, "utf8"), "orphan");
+		} finally {
+			chmodSync(directory, 0o700);
+		}
+	});
+});
 
 test("stale lock owned by a dead process is reclaimed", async () => {
 	await withStoreFixture(async ({ storePath, loadStore }) => {

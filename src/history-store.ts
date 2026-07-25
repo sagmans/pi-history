@@ -1,5 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+	chmod,
+	lstat,
+	mkdir,
+	readdir,
+	readFile,
+	rename,
+	rm,
+	stat,
+	writeFile,
+} from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -22,6 +32,7 @@ const LOCK_RETRY_DELAY_MS = 25;
 const LOCK_TIMEOUT_MS = 2000;
 const LOCK_STALE_MS = 30_000;
 const LOCK_OWNER_FILE = "owner.json";
+const ORPHAN_CLEANUP_MESSAGE = "unable to remove orphaned history artifacts";
 
 export type HistoryEntry = {
 	text: string;
@@ -192,6 +203,9 @@ export class HistoryStore {
 				}
 			}
 
+			// Orphaned temp copies hold prompt bytes; remove them while the lock
+			// is held so a confirmed clear leaves no readable residue behind.
+			await removeOrphanedTempArtifacts(this.identity.historyFilePath);
 			// Every confirmed clear mints a fresh opaque epoch: causal order never
 			// depends on wall-clock time or reusable counters, so no terminal
 			// exhaustion state exists.
@@ -376,6 +390,33 @@ function historyClearsMemory(input: {
 	return input.latest.clearEpoch !== input.memory.clearEpoch;
 }
 
+function tempArtifactPattern(filePath: string): RegExp {
+	const base = path.basename(filePath).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return new RegExp(`^${base}\\.\\d+\\.\\d+\\.tmp$`);
+}
+
+export async function removeOrphanedTempArtifacts(filePath: string): Promise<void> {
+	const directory = path.dirname(filePath);
+	const pattern = tempArtifactPattern(filePath);
+	for (const entry of await readdir(directory)) {
+		if (!pattern.test(entry)) continue;
+		const candidate = path.join(directory, entry);
+		try {
+			// lstat never follows: symlinks and non-regular entries stay untouched.
+			const stats = await lstat(candidate);
+			if (stats.isSymbolicLink() || !stats.isFile()) continue;
+			await rm(candidate, { force: true });
+		} catch {
+			// Path-free by contract: clear failures surface this message to users.
+			throw new Error(ORPHAN_CLEANUP_MESSAGE);
+		}
+	}
+}
+
+function tempArtifactName(filePath: string): string {
+	return `${filePath}.${process.pid}.${Date.now()}.tmp`;
+}
+
 function mergeEntry(existing: HistoryEntry | undefined, next: HistoryEntry): HistoryEntry {
 	if (!existing) return next;
 	return {
@@ -515,7 +556,7 @@ async function writeHistoryFile(
 	fence?: HistoryLockFence,
 ): Promise<void> {
 	await ensureHistoryDirectory(filePath);
-	const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+	const tempPath = tempArtifactName(filePath);
 	const data = `${JSON.stringify(history, null, 2)}\n`;
 	try {
 		await writeFile(tempPath, data, {
