@@ -31,6 +31,13 @@ bash scripts/npm/preflight.sh
 bash scripts/npm/validate-workflow.sh
 ```
 
+`validate-workflow.sh` parses the workflow structurally and guarantees that one
+intended publish job carries the tag trigger, the approval-gated environment,
+the effective `id-token: write` permission, and the hardened publish command
+together; duplicate keys, anchors, aliases, and split controls fail closed.
+Manual review still owns everything outside that structure: step side effects,
+action pins, and runner configuration.
+
 Preview, then provision the approval-gated GitHub environment, tag deployment policy, and admin-only tag ruleset:
 
 ```bash
