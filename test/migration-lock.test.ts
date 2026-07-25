@@ -87,11 +87,83 @@ test("withMigrationLock waits for a live owner", async () => {
 	});
 });
 
+test("withMigrationLock reclaims an abandoned lock whose PID was reused", async () => {
+	await withFixture(async (lockPath) => {
+		mkdirSync(lockPath);
+		const ownerPath = path.join(lockPath, OWNER_FILE_NAME);
+		writeOwner(lockPath, {
+			// Alive but unrelated: a reused PID never heartbeats this lock.
+			pid: process.pid,
+			host: hostname(),
+			createdAt: new Date().toISOString(),
+			token: "reused-pid-owner",
+		});
+		const staleTime = new Date(Date.now() - 10_000);
+		utimesSync(ownerPath, staleTime, staleTime);
+
+		const waiting = withMigrationLock(lockPath, async () => "completed", {
+			heartbeatStaleMs: 100,
+		});
+		const acquiredQuickly = await Promise.race([
+			waiting.then(() => true),
+			delay(500).then(() => false),
+		]);
+		if (!acquiredQuickly) rmSync(lockPath, { force: true, recursive: true });
+		const result = await waiting;
+
+		assert.equal(acquiredQuickly, true);
+		assert.equal(result, "completed");
+		assert.equal(existsSync(lockPath), false);
+	});
+});
+
+test("withMigrationLock heartbeat keeps a genuine live owner protected", async () => {
+	await withFixture(async (lockPath) => {
+		let releaseOwner!: () => void;
+		const ownerMayFinish = new Promise<void>((resolve) => {
+			releaseOwner = resolve;
+		});
+		const owner = withMigrationLock(
+			lockPath,
+			async () => {
+				await ownerMayFinish;
+			},
+			{ heartbeatIntervalMs: 20 },
+		);
+		await waitFor(() => existsSync(path.join(lockPath, OWNER_FILE_NAME)));
+
+		let entered = false;
+		const contender = withMigrationLock(
+			lockPath,
+			async () => {
+				entered = true;
+			},
+			{ heartbeatStaleMs: 80 },
+		);
+		await delay(200);
+		assert.equal(entered, false);
+
+		releaseOwner();
+		await owner;
+		await contender;
+		assert.equal(entered, true);
+		assert.equal(existsSync(lockPath), false);
+	});
+});
+
 function writeOwner(
 	lockPath: string,
 	owner: { pid: number; host: string; createdAt: string; token: string },
 ): void {
 	writeFileSync(path.join(lockPath, OWNER_FILE_NAME), `${JSON.stringify(owner)}\n`);
+}
+
+async function waitFor(condition: () => boolean): Promise<void> {
+	for (let attempts = 0; attempts < 100; attempts += 1) {
+		if (condition()) return;
+		await delay(10);
+	}
+	throw new Error("condition not met in time");
 }
 
 async function withFixture(testBody: (lockPath: string) => Promise<void>): Promise<void> {

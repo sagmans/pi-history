@@ -12,6 +12,7 @@ All notable changes to this project are documented here. This format follows
 - Replaced reusable clear counters with opaque per-clear epochs (schema 3) so distinct clears can never collapse into one lineage, including schema-1 old-writer clears on equal clocks; the terminal generation-exhaustion state no longer exists.
 - Fenced history-lock ownership with unguessable tokens: release and publication only apply to the matching lock instance, a live same-host owner is never evicted by lock age alone, and a resumed displaced writer cannot rename stale history over newer state.
 - Confirmed clears now remove crash-orphaned temporary prompt copies for the active history while holding mutation authority; symlinks, directories, malformed names, and unrelated files are left untouched, and cleanup failure blocks the clear with a path-free error.
+- Migration-lock ownership now heartbeats while held, so an abandoned lock whose PID was reused by an unrelated process is reclaimed in bounded time instead of hanging session initialization, while a genuine live owner remains protected for the full migration.
 - Isolated release smoke installs and runtime checks under one disposable Pi storage root with cleanup on success, failure, and interruption.
 ## [0.1.4] - 2026-07-23
 
