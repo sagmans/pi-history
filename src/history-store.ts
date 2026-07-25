@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
@@ -12,12 +13,11 @@ import {
 	validateStoredProjectRoot,
 } from "./project.ts";
 
-export const HISTORY_SCHEMA_VERSION = 2;
+export const HISTORY_SCHEMA_VERSION = 3;
 
 const LEGACY_HISTORY_SCHEMA_VERSION = 1;
-const INITIAL_CLEAR_GENERATION = 0;
-const LEGACY_CLEAR_GENERATION = 1;
-const CLEAR_GENERATION_EXHAUSTED_MESSAGE = "history clear generation exhausted";
+const GENERATION_HISTORY_SCHEMA_VERSION = 2;
+const MAX_CLEAR_EPOCH_LENGTH = 128;
 const LOCK_RETRY_DELAY_MS = 25;
 const LOCK_TIMEOUT_MS = 2000;
 const LOCK_STALE_MS = 30_000;
@@ -35,7 +35,7 @@ export type PromptHistoryFile = {
 	projectRoot: string;
 	createdAt: string;
 	updatedAt: string;
-	clearGeneration: number;
+	clearEpoch: string | null;
 	clearedAt?: string;
 	entries: HistoryEntry[];
 };
@@ -191,18 +191,12 @@ export class HistoryStore {
 				}
 			}
 
-			// The lock serializes allocation; generation carries causal order when
-			// wall-clock timestamps move backward or remain unchanged.
-			const currentGeneration = Math.max(
-				latest.history.clearGeneration,
-				this.history.clearGeneration,
-			);
-			if (currentGeneration === Number.MAX_SAFE_INTEGER) {
-				throw new RangeError(CLEAR_GENERATION_EXHAUSTED_MESSAGE);
-			}
+			// Every confirmed clear mints a fresh opaque epoch: causal order never
+			// depends on wall-clock time or reusable counters, so no terminal
+			// exhaustion state exists.
 			this.history = {
 				...createEmptyHistory(this.identity.projectRoot, timestamp),
-				clearGeneration: currentGeneration + 1,
+				clearEpoch: mintClearEpoch(),
 				clearedAt: timestamp,
 			};
 			this.blockReason = undefined;
@@ -299,7 +293,7 @@ export function createEmptyHistory(projectRoot: string, now: string): PromptHist
 		projectRoot,
 		createdAt: now,
 		updatedAt: now,
-		clearGeneration: INITIAL_CLEAR_GENERATION,
+		clearEpoch: null,
 		entries: [],
 	};
 }
@@ -342,12 +336,10 @@ function mergeHistories(input: {
 	const byText = new Map<string, HistoryEntry>();
 	let createdAt = input.now;
 	let updatedAt = input.now;
-	let clearGeneration = INITIAL_CLEAR_GENERATION;
 	let clearedAt: string | undefined;
 	for (const history of input.histories) {
 		createdAt = earlierTimestamp(createdAt, history.createdAt);
 		updatedAt = laterTimestamp(updatedAt, history.updatedAt);
-		clearGeneration = Math.max(clearGeneration, history.clearGeneration);
 		if (history.clearedAt) clearedAt = laterOptionalTimestamp(clearedAt, history.clearedAt);
 		for (const entry of history.entries) {
 			byText.set(entry.text, mergeEntry(byText.get(entry.text), entry));
@@ -366,7 +358,8 @@ function mergeHistories(input: {
 			projectRoot: input.identity.projectRoot,
 			createdAt,
 			updatedAt,
-			clearGeneration,
+			// Merged histories share one lineage by construction; keep that epoch.
+			clearEpoch: input.histories[0]?.clearEpoch ?? null,
 			entries,
 		},
 		clearedAt,
@@ -377,9 +370,9 @@ function historyClearsMemory(input: {
 	latest: PromptHistoryFile;
 	memory: PromptHistoryFile;
 }): boolean {
-	// Divergent generations cannot be merged safely: only disk was revalidated
+	// Divergent epochs cannot be merged safely: only disk was revalidated
 	// under the lock, including after a confirmed corrupt-history recovery clear.
-	return input.latest.clearGeneration !== input.memory.clearGeneration;
+	return input.latest.clearEpoch !== input.memory.clearEpoch;
 }
 
 function mergeEntry(existing: HistoryEntry | undefined, next: HistoryEntry): HistoryEntry {
@@ -409,6 +402,7 @@ function parseHistoryText(text: string): ParsedHistoryText {
 		isRecord(raw) &&
 		isPositiveInteger(raw.schemaVersion) &&
 		raw.schemaVersion !== HISTORY_SCHEMA_VERSION &&
+		raw.schemaVersion !== GENERATION_HISTORY_SCHEMA_VERSION &&
 		raw.schemaVersion !== LEGACY_HISTORY_SCHEMA_VERSION
 	) {
 		return { kind: "unsupported_schema" };
@@ -421,6 +415,7 @@ function normalizeHistoryFile(raw: unknown): PromptHistoryFile | undefined {
 	if (
 		!isRecord(raw) ||
 		(raw.schemaVersion !== HISTORY_SCHEMA_VERSION &&
+			raw.schemaVersion !== GENERATION_HISTORY_SCHEMA_VERSION &&
 			raw.schemaVersion !== LEGACY_HISTORY_SCHEMA_VERSION)
 	) {
 		return undefined;
@@ -430,26 +425,46 @@ function normalizeHistoryFile(raw: unknown): PromptHistoryFile | undefined {
 	const entries = normalizeEntries(raw.entries);
 	if (!base || !entries) return undefined;
 	if (raw.clearedAt !== undefined && typeof raw.clearedAt !== "string") return undefined;
-	// A legacy clear marker proves one clear happened; marker-free files begin at zero.
-	const clearGeneration =
-		raw.schemaVersion === LEGACY_HISTORY_SCHEMA_VERSION
-			? raw.clearedAt === undefined
-				? INITIAL_CLEAR_GENERATION
-				: LEGACY_CLEAR_GENERATION
-			: raw.clearGeneration;
-	if (
-		typeof clearGeneration !== "number" ||
-		!Number.isSafeInteger(clearGeneration) ||
-		clearGeneration < INITIAL_CLEAR_GENERATION
-	) {
+	const clearEpoch = normalizeClearEpoch(raw);
+	if (clearEpoch === undefined) return undefined;
+	return withOptionalClearMarker({ ...base, clearEpoch, entries }, raw.clearedAt);
+}
+
+// Legacy formats cannot name a stable lineage across reads: any clear marker
+// (schema-1) or nonzero generation (schema-2) mints a fresh epoch per read, so
+// revalidated disk always wins over session memory and distinct legacy clears
+// never collapse into one lineage. Schema-2 stays strict because it is this
+// extension's own shipped format.
+function normalizeClearEpoch(raw: Record<string, unknown>): string | null | undefined {
+	if (raw.schemaVersion === HISTORY_SCHEMA_VERSION) {
+		const { clearEpoch } = raw;
+		if (clearEpoch === null) return null;
+		if (
+			typeof clearEpoch === "string" &&
+			clearEpoch.length > 0 &&
+			clearEpoch.length <= MAX_CLEAR_EPOCH_LENGTH
+		) {
+			return clearEpoch;
+		}
 		return undefined;
 	}
-	return withOptionalClearMarker({ ...base, clearGeneration, entries }, raw.clearedAt);
+	if (raw.schemaVersion === GENERATION_HISTORY_SCHEMA_VERSION) {
+		const generation = raw.clearGeneration;
+		if (typeof generation !== "number" || !Number.isSafeInteger(generation) || generation < 0) {
+			return undefined;
+		}
+		return generation === 0 ? null : mintClearEpoch();
+	}
+	return raw.clearedAt === undefined ? null : mintClearEpoch();
+}
+
+function mintClearEpoch(): string {
+	return randomUUID();
 }
 
 function normalizeHistoryBase(
 	raw: Record<string, unknown>,
-): Omit<PromptHistoryFile, "entries" | "clearGeneration" | "clearedAt"> | undefined {
+): Omit<PromptHistoryFile, "entries" | "clearEpoch" | "clearedAt"> | undefined {
 	const { projectRoot, createdAt, updatedAt } = raw;
 	if (typeof projectRoot !== "string") return undefined;
 	if (typeof createdAt !== "string") return undefined;

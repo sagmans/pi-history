@@ -27,12 +27,9 @@ const ROLLED_BACK_CLEAR_TIMESTAMP = "2026-07-01T00:00:01.000Z";
 const POST_CLEAR_PROMPT_TIMESTAMP = "2026-07-01T00:00:05.000Z";
 const LEGACY_HISTORY_SCHEMA_VERSION = 1;
 const GENERATION_HISTORY_SCHEMA_VERSION = 2;
-const INITIAL_CLEAR_GENERATION = 0;
-const FIRST_CLEAR_GENERATION = 1;
-const SECOND_CLEAR_GENERATION = 2;
-const STALE_HIGH_CLEAR_GENERATION = 5;
-const EXHAUSTED_CLEAR_GENERATION = Number.MAX_SAFE_INTEGER;
-const UNSAFE_CLEAR_GENERATION = EXHAUSTED_CLEAR_GENERATION + 1;
+const UNSAFE_CLEAR_GENERATION = Number.MAX_SAFE_INTEGER + 1;
+const STALE_CLEAR_EPOCH = "epoch-stale-clear";
+const OVERLONG_CLEAR_EPOCH = "x".repeat(129);
 const SENSITIVE_PROMPT = "synthetic sensitive prompt";
 const POST_CLEAR_PROMPT = "synthetic post-clear prompt";
 const LEGACY_PROMPT = "synthetic legacy prompt";
@@ -52,23 +49,30 @@ const INVALID_SCHEMA_VERSIONS: ReadonlyArray<Readonly<{ label: string; value?: u
 ];
 const INVALID_CLEAR_GENERATIONS: ReadonlyArray<Readonly<{ label: string; value?: unknown }>> = [
 	{ label: "missing" },
-	{ label: "string", value: String(FIRST_CLEAR_GENERATION) },
+	{ label: "string", value: "1" },
 	{ label: "null", value: null },
 	{ label: "boolean", value: true },
 	{ label: "negative", value: -1 },
 	{ label: "fractional", value: 0.5 },
 	{ label: "unsafe", value: UNSAFE_CLEAR_GENERATION },
 ];
+const INVALID_CLEAR_EPOCHS: ReadonlyArray<Readonly<{ label: string; value?: unknown }>> = [
+	{ label: "missing" },
+	{ label: "number", value: 1 },
+	{ label: "boolean", value: true },
+	{ label: "empty", value: "" },
+	{ label: "overlong", value: OVERLONG_CLEAR_EPOCH },
+];
 const LEGACY_MIGRATION_CASES = [
 	{
 		label: "without a clear marker",
 		clearedAt: undefined,
-		expectedGeneration: INITIAL_CLEAR_GENERATION,
+		expectsClearEpoch: false,
 	},
 	{
 		label: "with a clear marker",
 		clearedAt: FIXTURE_TIMESTAMP,
-		expectedGeneration: FIRST_CLEAR_GENERATION,
+		expectsClearEpoch: true,
 	},
 ] as const;
 const CAUSAL_CLEAR_CASES = [
@@ -289,8 +293,13 @@ for (const migrationCase of LEGACY_MIGRATION_CASES) {
 			await store.recordPrompt(POST_CLEAR_PROMPT);
 
 			const saved = JSON.parse(readFileSync(storePath, "utf8"));
-			assert.equal(saved.schemaVersion, GENERATION_HISTORY_SCHEMA_VERSION);
-			assert.equal(saved.clearGeneration, migrationCase.expectedGeneration);
+			assert.equal(saved.schemaVersion, HISTORY_SCHEMA_VERSION);
+			if (migrationCase.expectsClearEpoch) {
+				assertOpaqueClearEpoch(saved.clearEpoch);
+			} else {
+				assert.equal(saved.clearEpoch, null);
+			}
+			assert.equal(saved.clearGeneration, undefined);
 			assert.equal(saved.clearedAt, migrationCase.clearedAt);
 			assert.deepEqual(
 				saved.entries.map((entry: { text: string }) => entry.text),
@@ -361,7 +370,7 @@ test("record revalidates a newly foreign project root before recording", async (
 		const store = await loadStore();
 		const foreign = {
 			schemaVersion: HISTORY_SCHEMA_VERSION,
-			clearGeneration: INITIAL_CLEAR_GENERATION,
+			clearEpoch: null,
 			projectRoot: "/other/project",
 			createdAt: FIXTURE_TIMESTAMP,
 			updatedAt: FIXTURE_TIMESTAMP,
@@ -386,7 +395,7 @@ test("clear revalidates a newly foreign project root before replacement", async 
 		const store = await loadStore();
 		const foreign = {
 			schemaVersion: HISTORY_SCHEMA_VERSION,
-			clearGeneration: INITIAL_CLEAR_GENERATION,
+			clearEpoch: null,
 			projectRoot: "/other/project",
 			createdAt: FIXTURE_TIMESTAMP,
 			updatedAt: FIXTURE_TIMESTAMP,
@@ -479,20 +488,49 @@ for (const invalidGeneration of INVALID_CLEAR_GENERATIONS) {
 
 			assert.deepEqual(clearResult, { kind: "cleared" });
 			assert.equal(store.writeBlocked, false);
-			assert.equal(saved.schemaVersion, GENERATION_HISTORY_SCHEMA_VERSION);
-			assert.equal(saved.clearGeneration, FIRST_CLEAR_GENERATION);
+			assert.equal(saved.schemaVersion, HISTORY_SCHEMA_VERSION);
+			assertOpaqueClearEpoch(saved.clearEpoch);
 		});
 	});
 }
 
-test("corrupt-history recovery clear supersedes stale higher-generation memory", async () => {
+for (const invalidEpoch of INVALID_CLEAR_EPOCHS) {
+	test(`schema-3 ${invalidEpoch.label} clear epoch is recoverable corruption`, async () => {
+		await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
+			const raw: Record<string, unknown> = {
+				schemaVersion: HISTORY_SCHEMA_VERSION,
+				projectRoot,
+				createdAt: FIXTURE_TIMESTAMP,
+				updatedAt: FIXTURE_TIMESTAMP,
+				entries: [],
+			};
+			if (invalidEpoch.value !== undefined) raw.clearEpoch = invalidEpoch.value;
+			mkdirSync(path.dirname(storePath), { recursive: true });
+			writeFileSync(storePath, serializeHistory(raw), "utf8");
+
+			const store = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
+
+			assert.equal(store.writeBlockedReason, "corrupt_history");
+
+			const clearResult = await store.clear();
+			const saved = JSON.parse(readFileSync(storePath, "utf8"));
+
+			assert.deepEqual(clearResult, { kind: "cleared" });
+			assert.equal(store.writeBlocked, false);
+			assert.equal(saved.schemaVersion, HISTORY_SCHEMA_VERSION);
+			assertOpaqueClearEpoch(saved.clearEpoch);
+		});
+	});
+}
+
+test("corrupt-history recovery clear supersedes stale-epoch memory", async () => {
 	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
 		mkdirSync(path.dirname(storePath), { recursive: true });
 		writeFileSync(
 			storePath,
 			serializeHistory({
-				schemaVersion: GENERATION_HISTORY_SCHEMA_VERSION,
-				clearGeneration: STALE_HIGH_CLEAR_GENERATION,
+				schemaVersion: HISTORY_SCHEMA_VERSION,
+				clearEpoch: STALE_CLEAR_EPOCH,
 				projectRoot,
 				createdAt: FIXTURE_TIMESTAMP,
 				updatedAt: FIXTURE_TIMESTAMP,
@@ -505,7 +543,7 @@ test("corrupt-history recovery clear supersedes stale higher-generation memory",
 		writeFileSync(
 			storePath,
 			serializeHistory({
-				schemaVersion: GENERATION_HISTORY_SCHEMA_VERSION,
+				schemaVersion: HISTORY_SCHEMA_VERSION,
 				projectRoot,
 				createdAt: FIXTURE_TIMESTAMP,
 				updatedAt: FIXTURE_TIMESTAMP,
@@ -524,30 +562,69 @@ test("corrupt-history recovery clear supersedes stale higher-generation memory",
 			saved.entries.map((entry: { text: string }) => entry.text),
 			[POST_CLEAR_PROMPT],
 		);
-		assert.equal(saved.clearGeneration, FIRST_CLEAR_GENERATION);
+		assertOpaqueClearEpoch(saved.clearEpoch);
+		assert.notEqual(saved.clearEpoch, STALE_CLEAR_EPOCH);
 	});
 });
 
-test("clear fails without replacing history when clear generation is exhausted", async () => {
-	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
-		const original = serializeHistory({
-			schemaVersion: GENERATION_HISTORY_SCHEMA_VERSION,
-			clearGeneration: EXHAUSTED_CLEAR_GENERATION,
-			projectRoot,
-			createdAt: FIXTURE_TIMESTAMP,
-			updatedAt: FIXTURE_TIMESTAMP,
-			clearedAt: FIXTURE_TIMESTAMP,
-			entries: [LEGACY_ENTRY],
-		});
-		mkdirSync(path.dirname(storePath), { recursive: true });
-		writeFileSync(storePath, original, "utf8");
+test("repeated clears mint distinct epochs without a terminal state", async () => {
+	await withStoreFixture(async ({ storePath, loadStore }) => {
+		const store = await loadStore();
+		const epochs: string[] = [];
+		for (let index = 0; index < 3; index += 1) {
+			await store.recordPrompt(`synthetic prompt ${index}`);
+			assert.deepEqual(await store.clear(), { kind: "cleared" });
+			const saved = JSON.parse(readFileSync(storePath, "utf8"));
+			assertOpaqueClearEpoch(saved.clearEpoch);
+			epochs.push(saved.clearEpoch);
+		}
 
-		const store = await loadStore({ clock: () => POST_CLEAR_PROMPT_TIMESTAMP });
-
+		assert.equal(new Set(epochs).size, epochs.length);
 		assert.equal(store.writeBlocked, false);
-		await assert.rejects(store.clear(), RangeError);
-		assert.equal(readFileSync(storePath, "utf8"), original);
-		assert.deepEqual(store.entries, [LEGACY_ENTRY]);
+	});
+});
+
+test("distinct legacy schema-1 clears never collapse into one lineage", async () => {
+	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
+		mkdirSync(path.dirname(storePath), { recursive: true });
+		// An old writer's cleared file: the marker proves one clear happened.
+		writeFileSync(
+			storePath,
+			serializeHistory({
+				schemaVersion: LEGACY_HISTORY_SCHEMA_VERSION,
+				projectRoot,
+				createdAt: FIXTURE_TIMESTAMP,
+				updatedAt: FIXTURE_TIMESTAMP,
+				clearedAt: FIXTURE_TIMESTAMP,
+				entries: [LEGACY_ENTRY],
+			}),
+			"utf8",
+		);
+		const stale = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
+
+		// The old writer clears again on an equal clock; this is a distinct clear.
+		writeFileSync(
+			storePath,
+			serializeHistory({
+				schemaVersion: LEGACY_HISTORY_SCHEMA_VERSION,
+				projectRoot,
+				createdAt: FIXTURE_TIMESTAMP,
+				updatedAt: FIXTURE_TIMESTAMP,
+				clearedAt: FIXTURE_TIMESTAMP,
+				entries: [],
+			}),
+			"utf8",
+		);
+
+		await stale.recordPrompt(POST_CLEAR_PROMPT);
+
+		const saved = JSON.parse(readFileSync(storePath, "utf8"));
+		assert.deepEqual(
+			saved.entries.map((entry: { text: string }) => entry.text),
+			[POST_CLEAR_PROMPT],
+		);
+		assert.equal(saved.schemaVersion, HISTORY_SCHEMA_VERSION);
+		assertOpaqueClearEpoch(saved.clearEpoch);
 	});
 });
 
@@ -579,7 +656,7 @@ test("project mismatch blocks writes instead of merging histories", async () => 
 	await withStoreFixture(async ({ storePath, loadStore }) => {
 		const foreign = {
 			schemaVersion: HISTORY_SCHEMA_VERSION,
-			clearGeneration: INITIAL_CLEAR_GENERATION,
+			clearEpoch: null,
 			projectRoot: "/other/project",
 			createdAt: FIXTURE_TIMESTAMP,
 			updatedAt: FIXTURE_TIMESTAMP,
@@ -700,6 +777,8 @@ for (const clearCase of CAUSAL_CLEAR_CASES) {
 			await first.clear();
 			await first.recordPrompt(SENSITIVE_PROMPT);
 			const stale = await loadStore({ clock: staleClock });
+			const firstClearEpoch = JSON.parse(readFileSync(storePath, "utf8")).clearEpoch;
+			assertOpaqueClearEpoch(firstClearEpoch);
 
 			await first.clear();
 			await stale.recordPrompt(POST_CLEAR_PROMPT);
@@ -710,7 +789,8 @@ for (const clearCase of CAUSAL_CLEAR_CASES) {
 				reloaded.entries.map((entry) => entry.text),
 				[POST_CLEAR_PROMPT],
 			);
-			assert.equal(saved.clearGeneration, SECOND_CLEAR_GENERATION);
+			assertOpaqueClearEpoch(saved.clearEpoch);
+			assert.notEqual(saved.clearEpoch, firstClearEpoch);
 			assert.equal(saved.clearedAt, clearCase.secondClearAt);
 		});
 	});
@@ -776,6 +856,11 @@ async function withStoreFixture(testBody: (fixture: Fixture) => Promise<void>): 
 
 function serializeHistory(history: unknown): string {
 	return `${JSON.stringify(history, null, 2)}\n`;
+}
+
+function assertOpaqueClearEpoch(value: unknown): void {
+	assert.equal(typeof value, "string");
+	assert.notEqual((value as string).length, 0);
 }
 
 function makeClock(values: string[]): Clock {
