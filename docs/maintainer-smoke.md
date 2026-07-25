@@ -26,8 +26,9 @@ infrastructure, not a package-user or CI dependency.
 The script:
 
 1. Creates disposable `HOME` and `PI_CODING_AGENT_DIR` trees.
-2. Seeds canonical profile history plus conflicting HOME-derived legacy history,
-   each with a distinct secret canary, without submitting any model prompt.
+2. Seeds canonical profile history in the final native schema (with the
+   `clearEpoch` lineage field) plus conflicting HOME-derived legacy history in
+   the pinned legacy schema, each with a distinct secret canary.
 3. Opens a non-focused sibling pane and launches
    `pi --approve --no-session -e .` with one-run project trust, update checks,
    and telemetry disabled.
@@ -39,12 +40,27 @@ The script:
 pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=1; cap=42; scope=global
 ```
 
-6. Verifies count and cap came only from canonical profile storage, not the
-   conflicting legacy fixture.
-7. Verifies the extracted line omits both canaries, repository path, both
-   history paths, disposable home, and agent directory.
-8. Requests a clean Pi exit, closes only the pane it created, and removes all
-   disposable state on success or failure.
+6. Submits one synthetic capture canary (no model access is needed; the
+   extension records at submit time even if the agent turn fails) and verifies
+   entries reach 2 on disk and in `/pi-history status`.
+7. Runs `/pi-history clear`, confirms the preselected `Yes` selector, and
+   verifies the cleared state in the diagnostic and on disk.
+8. Restarts Pi and verifies the cleared native state survives the relaunch.
+9. After each mutation, checks the on-disk native contract directly: schema
+   version, entry count, and `clearEpoch`/`clearedAt` lineage fields — a
+   fixture or runtime bump that forgets this script fails here.
+10. Verifies count and cap came only from canonical profile storage, not the
+    conflicting legacy fixture, and that every extracted line omits all
+    canaries, the repository path, both history paths, the disposable home,
+    and the agent directory.
+11. Requests a clean Pi exit, closes only the pane it created, and removes all
+    disposable state on success or failure.
+
+Proven paths: native profile history (schema 3 load, capture rewrite,
+confirmed clear with minted clear epoch, restart reload) and legacy HOME
+history (schema 1 fixture present but shadowed by the populated profile
+target). Legacy migration import itself is covered by unit tests, not this
+smoke.
 
 Only the validated `pi-history:` line is share-safe. Never persist or share raw
 TUI capture: Pi itself may render repository and disposable paths unrelated to

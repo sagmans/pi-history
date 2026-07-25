@@ -14,6 +14,7 @@ All notable changes to this project are documented here. This format follows
 - Confirmed clears now remove crash-orphaned temporary prompt copies for the active history while holding mutation authority; symlinks, directories, malformed names, and unrelated files are left untouched, and cleanup failure blocks the clear with a path-free error.
 - Migration-lock ownership now heartbeats while held, so an abandoned lock whose PID was reused by an unrelated process is reclaimed in bounded time instead of hanging session initialization, while a genuine live owner remains protected for the full migration.
 - Release-workflow validation now parses the workflow structurally and verifies the tag trigger, approval-gated environment, effective `id-token: write` permission, and hardened publish command on the single intended publish job; duplicate keys, split controls, misleading text, anchors, and aliases fail closed.
+- The Herdr maintainer smoke now seeds the final native history schema with clear-lineage metadata, keeps the legacy fixture pinned to schema 1, and exercises one synthetic capture, a confirmed clear, and a restart, with on-disk contract checks that fail on any schema or lineage drift.
 - Isolated release smoke installs and runtime checks under one disposable Pi storage root with cleanup on success, failure, and interruption.
 ## [0.1.4] - 2026-07-23
 

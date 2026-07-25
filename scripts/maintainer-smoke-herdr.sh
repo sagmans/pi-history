@@ -11,18 +11,27 @@ readonly PRIVATE_FILE_MODE="600"
 # Must match src/diagnostics.ts DIAGNOSTICS_VERSION and src/history-store.ts
 # HISTORY_SCHEMA_VERSION; the hardcoded values double as a cross-check against
 # the real extension output below, so a bump that forgets this script fails the
-# smoke rather than passing silently.
+# smoke rather than passing silently. The legacy fixture pins the oldest
+# supported input schema on purpose: it proves migration, not the native write
+# path.
 readonly DIAGNOSTICS_VERSION="2"
-readonly HISTORY_SCHEMA_VERSION="1"
+readonly HISTORY_SCHEMA_VERSION="3"
+readonly LEGACY_HISTORY_SCHEMA_VERSION="1"
 readonly SMOKE_MAX_ENTRIES="42"
 readonly LEGACY_SMOKE_MAX_ENTRIES="99"
-readonly SMOKE_ENTRY_COUNT="1"
+readonly SMOKE_ENTRIES_SEEDED="1"
+readonly SMOKE_ENTRIES_AFTER_CAPTURE="2"
+readonly SMOKE_ENTRIES_AFTER_CLEAR="0"
 readonly SMOKE_USE_COUNT="1"
 readonly GLOBAL_SCOPE_KEY="<global>"
 readonly SMOKE_CANARY="PI_HISTORY_SMOKE_SECRET_7E4A9C2D"
 readonly LEGACY_SMOKE_CANARY="PI_HISTORY_LEGACY_SECRET_8F5B0D3E"
+readonly CAPTURE_CANARY="PI_HISTORY_SMOKE_CAPTURE_1A2B3C4D"
+readonly RESTART_MARKER="PI_HISTORY_SMOKE_RESTART_9F8E7D6C"
 readonly FIXTURE_TIMESTAMP="2026-01-01T00:00:00.000Z"
-readonly EXPECTED_DIAGNOSTIC="pi-history: diagnosticsVersion=$DIAGNOSTICS_VERSION; state=healthy; initialization=ready; storage=ready; editor=ready; entries=$SMOKE_ENTRY_COUNT; cap=$SMOKE_MAX_ENTRIES; scope=global"
+readonly CAPTURE_POLL_TIMEOUT_S="10"
+readonly EXIT_SETTLE_DELAY_S="2"
+readonly RESTART_BOOT_DELAY_S="3"
 
 smoke_root=""
 pane_id=""
@@ -97,6 +106,72 @@ process.stdin.on("end", () => {
 '
 }
 
+expected_diagnostic() {
+	printf 'pi-history: diagnosticsVersion=%s; state=healthy; initialization=ready; storage=ready; editor=ready; entries=%s; cap=%s; scope=global' \
+		"$DIAGNOSTICS_VERSION" "$1" "$SMOKE_MAX_ENTRIES"
+}
+
+run_status_check() {
+	local expected_entries="$1"
+	herdr pane run "$pane_id" "/pi-history status" >/dev/null
+	herdr wait output "$pane_id" --match "pi-history: diagnosticsVersion=$DIAGNOSTICS_VERSION;" --source recent-unwrapped \
+		--timeout "$STATUS_TIMEOUT_MS" >/dev/null || fail "versioned diagnostic did not appear"
+	local pane_json diagnostic
+	pane_json="$(herdr pane read "$pane_id" --source recent-unwrapped --lines "$CAPTURE_LINES" --format text)"
+	diagnostic="$(printf '%s' "$pane_json" | extract_diagnostic)" || fail "unable to extract diagnostic line"
+	[[ "$diagnostic" == "$(expected_diagnostic "$expected_entries")" ]] || fail "diagnostic contract mismatch"
+	local private_value
+	for private_value in "$SMOKE_CANARY" "$LEGACY_SMOKE_CANARY" "$CAPTURE_CANARY" \
+		"$repo_root" "$history_dir" "$legacy_history_dir" "$smoke_root" "$smoke_home" "$agent_dir"; do
+		[[ "$diagnostic" != *"$private_value"* ]] || fail "diagnostic exposed private runtime data"
+	done
+	last_diagnostic="$diagnostic"
+}
+
+count_file_entries() {
+	node -e '
+const fs = require("node:fs");
+try {
+  const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  process.stdout.write(String(Array.isArray(data.entries) ? data.entries.length : -1));
+} catch {
+  process.stdout.write("-1");
+}
+' "$history_dir/global.json"
+}
+
+wait_for_file_entries() {
+	local expected_count="$1"
+	local deadline=$((SECONDS + CAPTURE_POLL_TIMEOUT_S))
+	for ((;;)); do
+		[[ "$(count_file_entries)" == "$expected_count" ]] && return 0
+		((SECONDS < deadline)) || return 1
+		sleep 0.2
+	done
+}
+
+# On-disk contract check: fails whenever the native schema version or the
+# required clear-lineage fields drift from the runtime that wrote the file.
+check_history_file() {
+	local epoch_mode="$1" expected_count="$2"
+	node - "$history_dir/global.json" "$HISTORY_SCHEMA_VERSION" "$epoch_mode" "$expected_count" <<'NODE'
+const fs = require("node:fs");
+const [file, schemaVersion, epochMode, expectedCount] = process.argv.slice(2);
+const fail = (message) => {
+  console.error(`native history contract drift: ${message}`);
+  process.exit(1);
+};
+const data = JSON.parse(fs.readFileSync(file, "utf8"));
+if (data.schemaVersion !== Number(schemaVersion)) fail("schemaVersion drift");
+if (!Array.isArray(data.entries) || data.entries.length !== Number(expectedCount)) fail("entries drift");
+if (epochMode === "null" && data.clearEpoch !== null) fail("clearEpoch must be null before any clear");
+if (epochMode === "minted" && (typeof data.clearEpoch !== "string" || data.clearEpoch.length === 0)) {
+  fail("clearEpoch must be an opaque string after a confirmed clear");
+}
+if (epochMode === "minted" && typeof data.clearedAt !== "string") fail("clearedAt marker missing");
+NODE
+}
+
 [[ "${HERDR_ENV:-}" == "1" ]] || fail "HERDR_ENV=1 is required"
 command -v herdr >/dev/null 2>&1 || fail "herdr is not available"
 command -v node >/dev/null 2>&1 || fail "node is not available"
@@ -129,6 +204,7 @@ cat >"$history_dir/global.json" <<JSON
   "projectRoot": "$GLOBAL_SCOPE_KEY",
   "createdAt": "$FIXTURE_TIMESTAMP",
   "updatedAt": "$FIXTURE_TIMESTAMP",
+  "clearEpoch": null,
   "entries": [
     {
       "text": "$SMOKE_CANARY",
@@ -149,7 +225,7 @@ cat >"$legacy_history_dir/config.json" <<JSON
 JSON
 cat >"$legacy_history_dir/global.json" <<JSON
 {
-  "schemaVersion": $HISTORY_SCHEMA_VERSION,
+  "schemaVersion": $LEGACY_HISTORY_SCHEMA_VERSION,
   "projectRoot": "$GLOBAL_SCOPE_KEY",
   "createdAt": "$FIXTURE_TIMESTAMP",
   "updatedAt": "$FIXTURE_TIMESTAMP",
@@ -185,15 +261,34 @@ herdr pane run "$pane_id" "$launch_command" >/dev/null
 herdr wait output "$pane_id" --match "pi v$pi_version" --source recent-unwrapped \
 	--timeout "$READY_TIMEOUT_MS" >/dev/null || fail "Pi TUI did not become ready"
 
-herdr pane run "$pane_id" "/pi-history status" >/dev/null
-herdr wait output "$pane_id" --match "pi-history: diagnosticsVersion=$DIAGNOSTICS_VERSION;" --source recent-unwrapped \
-	--timeout "$STATUS_TIMEOUT_MS" >/dev/null || fail "versioned diagnostic did not appear"
-pane_json="$(herdr pane read "$pane_id" --source recent-unwrapped --lines "$CAPTURE_LINES" --format text)"
-diagnostic="$(printf '%s' "$pane_json" | extract_diagnostic)" || fail "unable to extract diagnostic line"
+last_diagnostic=""
+run_status_check "$SMOKE_ENTRIES_SEEDED"
 
-[[ "$diagnostic" == "$EXPECTED_DIAGNOSTIC" ]] || fail "diagnostic contract mismatch"
-for private_value in "$SMOKE_CANARY" "$LEGACY_SMOKE_CANARY" "$repo_root" "$history_dir" "$legacy_history_dir" "$smoke_root" "$smoke_home" "$agent_dir"; do
-	[[ "$diagnostic" != *"$private_value"* ]] || fail "diagnostic exposed private runtime data"
-done
+# One synthetic capture: the extension records at submit time, so the agent
+# turn may fail without provider credentials without affecting this proof.
+herdr pane run "$pane_id" "$CAPTURE_CANARY" >/dev/null
+wait_for_file_entries "$SMOKE_ENTRIES_AFTER_CAPTURE" || fail "synthetic capture was not persisted"
+run_status_check "$SMOKE_ENTRIES_AFTER_CAPTURE"
+check_history_file null "$SMOKE_ENTRIES_AFTER_CAPTURE" || fail "native contract drift after capture"
 
-printf 'pi-history Herdr smoke passed: %s\n' "$diagnostic"
+# Confirmed clear: the dialog is a selector with "Yes" preselected, so a
+# matching selection plus Enter confirms it.
+herdr pane run "$pane_id" "/pi-history clear" >/dev/null
+herdr wait output "$pane_id" --match "Clear pi-history?" --source recent-unwrapped \
+	--timeout "$STATUS_TIMEOUT_MS" >/dev/null || fail "clear confirmation did not appear"
+herdr pane run "$pane_id" "Yes" >/dev/null
+herdr wait output "$pane_id" --match "pi-history cleared" --source recent-unwrapped \
+	--timeout "$STATUS_TIMEOUT_MS" >/dev/null || fail "confirmed clear did not complete"
+run_status_check "$SMOKE_ENTRIES_AFTER_CLEAR"
+check_history_file minted "$SMOKE_ENTRIES_AFTER_CLEAR" || fail "native contract drift after clear"
+
+# Restart persistence: a fresh TUI must load the cleared native state.
+herdr pane run "$pane_id" "/exit" >/dev/null
+sleep "$EXIT_SETTLE_DELAY_S"
+herdr pane run "$pane_id" "$launch_command # $RESTART_MARKER" >/dev/null
+herdr wait output "$pane_id" --match "$RESTART_MARKER" --source recent-unwrapped \
+	--timeout "$READY_TIMEOUT_MS" >/dev/null || fail "Pi relaunch command did not land"
+sleep "$RESTART_BOOT_DELAY_S"
+run_status_check "$SMOKE_ENTRIES_AFTER_CLEAR"
+
+printf 'pi-history Herdr smoke passed: %s\n' "$last_diagnostic"
