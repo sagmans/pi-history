@@ -39,7 +39,7 @@
 		"typecheck": "tsc --noEmit",
 		"check": "biome check .",
 		"check:fix": "biome check --write .",
-		"audit": "npm audit --audit-level=high",
+		"audit": "node scripts/npm/audit-gate.mjs",
 		"smoke:herdr": "bash scripts/maintainer-smoke-herdr.sh",
 		"verify": "npm run check && npm run typecheck && npm test",
 		"verify:ci": "npm run audit && npm run verify"

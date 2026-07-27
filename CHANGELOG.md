@@ -8,7 +8,7 @@ All notable changes to this project are documented here. This format follows
 
 ### Changed
 
-- Raised Pi development dependencies to 0.82.1, clearing the nested protobufjs advisory; the remaining dev-only brace-expansion advisory is pinned inside Pi's own published shrinkwrap and awaits an upstream release.
+- Raised Pi development dependencies to 0.82.1, clearing the nested protobufjs advisory; the release audit gate now waives only the remaining dev-only brace-expansion advisory, which is pinned inside Pi's own published shrinkwrap and scoped to its exact install path until an upstream release resolves it.
 
 ### Fixed
 
