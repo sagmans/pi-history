@@ -11,11 +11,11 @@ readonly STORE_SOURCE="${REPO_ROOT}/src/history-store.ts"
 
 smoke_constant() {
 	local name="$1"
-	rg -o "readonly ${name}=\"([0-9]+)\"" --replace '$1' "${SMOKE_SCRIPT}"
+	sed -n "s/^readonly ${name}=\"\([0-9][0-9]*\)\"/\1/p" "${SMOKE_SCRIPT}"
 }
 
 runtime_schema_version() {
-	rg -o 'export const HISTORY_SCHEMA_VERSION = ([0-9]+);' --replace '$1' "${STORE_SOURCE}"
+	sed -n 's/^export const HISTORY_SCHEMA_VERSION = \([0-9][0-9]*\);/\1/p' "${STORE_SOURCE}"
 }
 
 test_native_fixture_matches_runtime_schema() {
@@ -30,7 +30,7 @@ test_native_fixture_matches_runtime_schema() {
 }
 
 test_native_fixture_carries_clear_lineage_metadata() {
-	rg -q '"clearEpoch": null' "${SMOKE_SCRIPT}" || {
+	grep -q '"clearEpoch": null' "${SMOKE_SCRIPT}" || {
 		printf 'smoke native fixture lacks required clearEpoch lineage field\n' >&2
 		return 1
 	}
