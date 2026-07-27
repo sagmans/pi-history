@@ -6,6 +6,10 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Raised Pi development dependencies to 0.82.1, clearing the nested protobufjs advisory; the remaining dev-only brace-expansion advisory is pinned inside Pi's own published shrinkwrap and awaits an upstream release.
+
 ### Fixed
 
 - Made confirmed prompt-history clears monotonic across clock changes and corruption recovery so stale open sessions cannot restore cleared prompts; existing history migrates without eager rewrites.
