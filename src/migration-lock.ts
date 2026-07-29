@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Stats } from "node:fs";
-import { lstat, mkdir, readdir, rmdir, unlink, utimes } from "node:fs/promises";
+import { lstat, mkdir, readdir, rmdir, utimes } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { hasErrorCode, isPositiveInteger, isRecord } from "./guards.ts";
+import { LOCK_REMOVAL_CLAIM_DIRECTORY, removeLockDirectoryIf } from "./lock-directory.ts";
 import { readPrivateText, writePrivateFile } from "./migration-safe-files.ts";
 import { PRIVATE_DIR_MODE } from "./project.ts";
 
@@ -107,35 +108,36 @@ async function reclaimAbandonedMigrationLock(
 	const owner = await readMigrationLockOwner(lockPath);
 	if (owner) {
 		if (await migrationLockOwnerIsActive(lockPath, owner, heartbeatStaleMs)) return false;
-		return removeOwnedLock(lockPath, owner.token);
+		return removeLockDirectoryIf(lockPath, async () => {
+			const current = await readMigrationLockOwner(lockPath);
+			return (
+				current?.token === owner.token &&
+				!(await migrationLockOwnerIsActive(lockPath, current, heartbeatStaleMs))
+			);
+		});
 	}
 	if (Date.now() - lockStats.mtimeMs <= OWNERLESS_LOCK_STALE_MS) return false;
-	let entries: string[];
-	try {
-		entries = await readdir(lockPath);
-	} catch (error) {
-		if (hasErrorCode(error, "ENOENT")) return true;
-		throw error;
-	}
-	if (entries.length === 1 && entries[0] === LOCK_OWNER_FILE) {
-		const ownerPath = path.join(lockPath, LOCK_OWNER_FILE);
-		const ownerStats = await lstat(ownerPath).catch(() => undefined);
-		if (!ownerStats?.isFile()) return false;
+	return removeLockDirectoryIf(lockPath, async () => {
 		if (await readMigrationLockOwner(lockPath)) return false;
-		await unlink(ownerPath).catch(() => {});
-	}
-	return rmdir(lockPath)
-		.then(() => true)
-		.catch(() => false);
+		let entries: string[];
+		try {
+			entries = (await readdir(lockPath)).filter((entry) => entry !== LOCK_REMOVAL_CLAIM_DIRECTORY);
+		} catch (error) {
+			if (hasErrorCode(error, "ENOENT")) return false;
+			throw error;
+		}
+		if (entries.length === 0) return true;
+		if (entries.length !== 1 || entries[0] !== LOCK_OWNER_FILE) return false;
+		const ownerStats = await lstat(path.join(lockPath, LOCK_OWNER_FILE)).catch(() => undefined);
+		return ownerStats?.isFile() === true && !(await readMigrationLockOwner(lockPath));
+	});
 }
 
 async function removeOwnedLock(lockPath: string, token: string): Promise<boolean> {
-	const current = await readMigrationLockOwner(lockPath);
-	if (current?.token !== token) return false;
-	await unlink(path.join(lockPath, LOCK_OWNER_FILE)).catch(() => {});
-	return rmdir(lockPath)
-		.then(() => true)
-		.catch(() => false);
+	return removeLockDirectoryIf(lockPath, async () => {
+		const current = await readMigrationLockOwner(lockPath);
+		return current?.token === token;
+	});
 }
 
 async function readMigrationLockOwner(lockPath: string): Promise<MigrationLockOwner | undefined> {

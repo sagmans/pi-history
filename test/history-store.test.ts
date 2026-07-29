@@ -14,6 +14,7 @@ import {
 import { hostname, tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 import {
 	type Clock,
@@ -23,6 +24,7 @@ import {
 	removeOrphanedTempArtifacts,
 	withHistoryFileLock,
 } from "../src/history-store.ts";
+import { LOCK_REMOVAL_CLAIM_DIRECTORY } from "../src/lock-directory.ts";
 import { createGlobalIdentity, createProjectIdentity, GLOBAL_SCOPE_KEY } from "../src/project.ts";
 
 const FIXTURE_TIMESTAMP = "2026-07-01T00:00:00.000Z";
@@ -730,6 +732,52 @@ test("parallel saves are serialized without losing prompts", async () => {
 	});
 });
 
+test("record publication failure preserves prior in-memory state", async (context) => {
+	context.mock.timers.enable({ apis: ["Date"], now: new Date(FIXTURE_TIMESTAMP) });
+	await withStoreFixture(async ({ storePath, loadStore }) => {
+		const store = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
+		await store.recordPrompt(LEGACY_PROMPT);
+		const priorEntries = [...store.entries];
+		const priorWarnings = [...store.warnings];
+		mkdirSync(`${storePath}.${process.pid}.${Date.now()}.tmp`);
+
+		await assert.rejects(store.recordPrompt(POST_CLEAR_PROMPT));
+
+		assert.deepEqual(store.entries, priorEntries);
+		assert.equal(store.writeBlockedReason, undefined);
+		assert.deepEqual(store.warnings, priorWarnings);
+		assert.deepEqual(
+			JSON.parse(readFileSync(storePath, "utf8")).entries.map(
+				(entry: { text: string }) => entry.text,
+			),
+			[LEGACY_PROMPT],
+		);
+	});
+});
+
+test("clear publication failure preserves prior in-memory state", async (context) => {
+	context.mock.timers.enable({ apis: ["Date"], now: new Date(FIXTURE_TIMESTAMP) });
+	await withStoreFixture(async ({ storePath, loadStore }) => {
+		const store = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
+		await store.recordPrompt(LEGACY_PROMPT);
+		const priorEntries = [...store.entries];
+		const priorWarnings = [...store.warnings];
+		mkdirSync(`${storePath}.${process.pid}.${Date.now()}.tmp`);
+
+		await assert.rejects(store.clear());
+
+		assert.deepEqual(store.entries, priorEntries);
+		assert.equal(store.writeBlockedReason, undefined);
+		assert.deepEqual(store.warnings, priorWarnings);
+		assert.deepEqual(
+			JSON.parse(readFileSync(storePath, "utf8")).entries.map(
+				(entry: { text: string }) => entry.text,
+			),
+			[LEGACY_PROMPT],
+		);
+	});
+});
+
 test("clear wipes current project history and records a clear marker", async () => {
 	await withStoreFixture(async ({ storePath, loadStore }) => {
 		const store = await loadStore();
@@ -882,6 +930,40 @@ test("stale lock owned by a dead process is reclaimed", async () => {
 	});
 });
 
+test("stale history reclaimers wait for an existing removal claim", async () => {
+	await withStoreFixture(async ({ storePath }) => {
+		const lockPath = `${storePath}.lock`;
+		mkdirSync(lockPath, { recursive: true, mode: 0o700 });
+		writeLockOwnerFixture(lockPath, {
+			pid: 999_999,
+			host: hostname(),
+			createdAt: FIXTURE_TIMESTAMP,
+		});
+		mkdirSync(path.join(lockPath, LOCK_REMOVAL_CLAIM_DIRECTORY));
+		const releases = [deferred(), deferred()];
+		const entered: number[] = [];
+		const contenders = releases.map((release, index) =>
+			withHistoryFileLock(storePath, async () => {
+				entered.push(index);
+				await release.promise;
+			}),
+		);
+
+		await delay(100);
+		const enteredWhileClaimed = entered.length;
+		for (const release of releases) release.resolve();
+		rmSync(path.join(lockPath, LOCK_REMOVAL_CLAIM_DIRECTORY), {
+			force: true,
+			recursive: true,
+		});
+		await Promise.all(contenders);
+
+		assert.equal(enteredWhileClaimed, 0);
+		assert.deepEqual(new Set(entered), new Set([0, 1]));
+		assert.equal(existsSync(lockPath), false);
+	});
+});
+
 test("live same-host owner is never evicted by lock age alone", async () => {
 	await withStoreFixture(async ({ storePath }) => {
 		const lockPath = `${storePath}.lock`;
@@ -920,41 +1002,29 @@ test("dead owner is reclaimed and the successor publishes", async () => {
 test("old owner release cannot delete a successor lock", async () => {
 	await withStoreFixture(async ({ storePath }) => {
 		const lockPath = `${storePath}.lock`;
-		let oldAcquired!: () => void;
-		const oldHoldsLock = new Promise<void>((resolve) => {
-			oldAcquired = resolve;
-		});
-		let releaseOld!: () => void;
-		const oldMayFinish = new Promise<void>((resolve) => {
-			releaseOld = resolve;
-		});
+		const oldHoldsLock = deferred();
+		const oldMayFinish = deferred();
 		const oldOwner = withHistoryFileLock(storePath, async () => {
-			oldAcquired();
-			await oldMayFinish;
+			oldHoldsLock.resolve();
+			await oldMayFinish.promise;
 		});
-		await oldHoldsLock;
+		await oldHoldsLock.promise;
 
 		// Simulate reclamation: a successor takes over the same lock path.
 		rmSync(lockPath, { force: true, recursive: true });
-		let successorAcquired!: () => void;
-		const successorHoldsLock = new Promise<void>((resolve) => {
-			successorAcquired = resolve;
-		});
-		let releaseSuccessor!: () => void;
-		const successorMayFinish = new Promise<void>((resolve) => {
-			releaseSuccessor = resolve;
-		});
+		const successorHoldsLock = deferred();
+		const successorMayFinish = deferred();
 		const successor = withHistoryFileLock(storePath, async () => {
-			successorAcquired();
-			await successorMayFinish;
+			successorHoldsLock.resolve();
+			await successorMayFinish.promise;
 		});
-		await successorHoldsLock;
+		await successorHoldsLock.promise;
 
-		releaseOld();
+		oldMayFinish.resolve();
 		await oldOwner;
 		assert.equal(existsSync(lockPath), true);
 
-		releaseSuccessor();
+		successorMayFinish.resolve();
 		await successor;
 		assert.equal(existsSync(lockPath), false);
 	});
@@ -963,21 +1033,15 @@ test("old owner release cannot delete a successor lock", async () => {
 test("resumed displaced writer cannot fence or publish over a successor", async () => {
 	await withStoreFixture(async ({ storePath }) => {
 		const lockPath = `${storePath}.lock`;
-		let displacedAcquired!: () => void;
-		const displacedHoldsLock = new Promise<void>((resolve) => {
-			displacedAcquired = resolve;
-		});
-		let resumeDisplaced!: () => void;
-		const displacedMayResume = new Promise<void>((resolve) => {
-			resumeDisplaced = resolve;
-		});
+		const displacedHoldsLock = deferred();
+		const displacedMayResume = deferred();
 		const displaced = withHistoryFileLock(storePath, async (fence) => {
-			displacedAcquired();
-			await displacedMayResume;
+			displacedHoldsLock.resolve();
+			await displacedMayResume.promise;
 			await fence();
 			return "published";
 		});
-		await displacedHoldsLock;
+		await displacedHoldsLock.promise;
 
 		rmSync(lockPath, { force: true, recursive: true });
 		const markerPath = `${storePath}.successor-marker`;
@@ -985,7 +1049,7 @@ test("resumed displaced writer cannot fence or publish over a successor", async 
 			writeFileSync(markerPath, "published", { mode: 0o600 });
 		});
 
-		resumeDisplaced();
+		displacedMayResume.resolve();
 		await assert.rejects(displaced, /ownership/);
 		assert.equal(readFileSync(markerPath, "utf8"), "published");
 		assert.equal(existsSync(lockPath), false);
@@ -1046,6 +1110,14 @@ function writeLockOwnerFixture(
 function assertOpaqueClearEpoch(value: unknown): void {
 	assert.equal(typeof value, "string");
 	assert.notEqual((value as string).length, 0);
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+	let resolve!: () => void;
+	const promise = new Promise<void>((release) => {
+		resolve = release;
+	});
+	return { promise, resolve };
 }
 
 function makeClock(values: string[]): Clock {

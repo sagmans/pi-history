@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { LOCK_REMOVAL_CLAIM_DIRECTORY } from "../src/lock-directory.ts";
 import { withMigrationLock } from "../src/migration-lock.ts";
 
 const OWNER_FILE_NAME = "owner.json";
@@ -117,16 +118,57 @@ test("withMigrationLock reclaims an abandoned lock whose PID was reused", async 
 	});
 });
 
+test("migration reclaimers preserve a claimed stale owner", async () => {
+	await withFixture(async (lockPath) => {
+		mkdirSync(lockPath);
+		writeOwner(lockPath, {
+			pid: 999_999,
+			host: hostname(),
+			createdAt: "2000-01-01T00:00:00.000Z",
+			token: "stale-owner",
+		});
+		mkdirSync(path.join(lockPath, LOCK_REMOVAL_CLAIM_DIRECTORY));
+		const releases = [deferred(), deferred()];
+		const entered: number[] = [];
+		const contenders = releases.map((release, index) =>
+			withMigrationLock(lockPath, async () => {
+				entered.push(index);
+				await release.promise;
+			}),
+		);
+
+		await delay(100);
+		const enteredWhileClaimed = entered.length;
+		const ownerPreserved = existsSync(path.join(lockPath, OWNER_FILE_NAME));
+		for (const release of releases) release.resolve();
+		if (!ownerPreserved) {
+			writeOwner(lockPath, {
+				pid: 999_999,
+				host: hostname(),
+				createdAt: "2000-01-01T00:00:00.000Z",
+				token: "restored-stale-owner",
+			});
+		}
+		rmSync(path.join(lockPath, LOCK_REMOVAL_CLAIM_DIRECTORY), {
+			force: true,
+			recursive: true,
+		});
+		await Promise.all(contenders);
+
+		assert.equal(enteredWhileClaimed, 0);
+		assert.equal(ownerPreserved, true);
+		assert.deepEqual(new Set(entered), new Set([0, 1]));
+		assert.equal(existsSync(lockPath), false);
+	});
+});
+
 test("withMigrationLock heartbeat keeps a genuine live owner protected", async () => {
 	await withFixture(async (lockPath) => {
-		let releaseOwner!: () => void;
-		const ownerMayFinish = new Promise<void>((resolve) => {
-			releaseOwner = resolve;
-		});
+		const ownerMayFinish = deferred();
 		const owner = withMigrationLock(
 			lockPath,
 			async () => {
-				await ownerMayFinish;
+				await ownerMayFinish.promise;
 			},
 			{ heartbeatIntervalMs: 20 },
 		);
@@ -143,13 +185,21 @@ test("withMigrationLock heartbeat keeps a genuine live owner protected", async (
 		await delay(200);
 		assert.equal(entered, false);
 
-		releaseOwner();
+		ownerMayFinish.resolve();
 		await owner;
 		await contender;
 		assert.equal(entered, true);
 		assert.equal(existsSync(lockPath), false);
 	});
 });
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+	let resolve!: () => void;
+	const promise = new Promise<void>((release) => {
+		resolve = release;
+	});
+	return { promise, resolve };
+}
 
 function writeOwner(
 	lockPath: string,

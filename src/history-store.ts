@@ -16,6 +16,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import type { BlockReason } from "./block-reason.ts";
 import { hasErrorCode, isPositiveInteger, isRecord } from "./guards.ts";
+import { removeLockDirectoryIf } from "./lock-directory.ts";
 import {
 	PRIVATE_DIR_MODE,
 	PRIVATE_FILE_MODE,
@@ -170,14 +171,15 @@ export class HistoryStore {
 				now: timestamp,
 				histories: staleMemoryCleared ? [latest.history] : [latest.history, this.history],
 			});
-			this.history = upsertPrompt({
+			const nextHistory = upsertPrompt({
 				history: merged,
 				text,
 				maxEntries: this.maxEntries,
 				now: timestamp,
 			});
-			await writeHistoryFile(this.identity.historyFilePath, this.history, fence);
-			return { kind: "recorded", entryCount: this.history.entries.length };
+			await writeHistoryFile(this.identity.historyFilePath, nextHistory, fence);
+			this.history = nextHistory;
+			return { kind: "recorded", entryCount: nextHistory.entries.length };
 		});
 	}
 
@@ -209,14 +211,15 @@ export class HistoryStore {
 			// Every confirmed clear mints a fresh opaque epoch: causal order never
 			// depends on wall-clock time or reusable counters, so no terminal
 			// exhaustion state exists.
-			this.history = {
+			const nextHistory = {
 				...createEmptyHistory(this.identity.projectRoot, timestamp),
 				clearEpoch: mintClearEpoch(),
 				clearedAt: timestamp,
 			};
+			await writeHistoryFile(this.identity.historyFilePath, nextHistory, fence);
+			this.history = nextHistory;
 			this.blockReason = undefined;
 			this.blockWarnings = [];
-			await writeHistoryFile(this.identity.historyFilePath, this.history, fence);
 			return { kind: "cleared" };
 		});
 	}
@@ -553,7 +556,7 @@ function normalizeEntry(raw: unknown): HistoryEntry | undefined {
 async function writeHistoryFile(
 	filePath: string,
 	history: PromptHistoryFile,
-	fence?: HistoryLockFence,
+	fence: HistoryLockFence,
 ): Promise<void> {
 	await ensureHistoryDirectory(filePath);
 	const tempPath = tempArtifactName(filePath);
@@ -565,7 +568,7 @@ async function writeHistoryFile(
 		});
 		await chmod(tempPath, PRIVATE_FILE_MODE);
 		// Fence before rename: a displaced writer must not publish over newer state.
-		await fence?.();
+		await fence();
 		await rename(tempPath, filePath);
 	} catch (error) {
 		await rm(tempPath, { force: true });
@@ -645,23 +648,25 @@ async function assertLockOwnership(lockPath: string, token: string): Promise<voi
 }
 
 async function releaseHistoryLock(lockPath: string, token: string): Promise<void> {
-	const owner = await readLockOwner(lockPath);
-	if (owner?.token !== token) return;
-	await rm(lockPath, { force: true, recursive: true });
+	await removeLockDirectoryIf(lockPath, async () => {
+		const owner = await readLockOwner(lockPath);
+		return owner?.token === token;
+	});
 }
 
 async function reclaimStaleLock(lockPath: string): Promise<boolean> {
 	const owner = await readLockOwner(lockPath);
 	if (owner) {
 		if (lockOwnerIsActive(owner)) return false;
-		await rm(lockPath, { force: true, recursive: true });
-		return true;
+		return removeLockDirectoryIf(lockPath, async () => {
+			const current = await readLockOwner(lockPath);
+			return current?.token === owner.token && !lockOwnerIsActive(current);
+		});
 	}
 
 	const stats = await stat(lockPath).catch(() => undefined);
 	if (!stats || Date.now() - stats.mtimeMs <= LOCK_STALE_MS) return false;
-	await rm(lockPath, { force: true, recursive: true });
-	return true;
+	return removeLockDirectoryIf(lockPath, async () => !(await readLockOwner(lockPath)));
 }
 
 async function readLockOwner(lockPath: string): Promise<HistoryLockOwner | undefined> {
