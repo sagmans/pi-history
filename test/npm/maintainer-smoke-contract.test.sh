@@ -46,8 +46,9 @@ test_legacy_fixture_is_explicitly_legacy_schema() {
 }
 
 test_smoke_exercises_capture_clear_and_restart() {
-	local script
+	local script restart_section
 	script="$(cat "${SMOKE_SCRIPT}")"
+	restart_section="$(sed -n '/^# Restart persistence:/,/^printf .*Herdr smoke passed:/p' "${SMOKE_SCRIPT}")"
 	[[ "${script}" == *'/pi-history clear'* ]] || {
 		printf 'smoke does not exercise a confirmed clear\n' >&2
 		return 1
@@ -58,6 +59,13 @@ test_smoke_exercises_capture_clear_and_restart() {
 	}
 	[[ "${script}" == *'check_history_file'* ]] || {
 		printf 'smoke lacks the on-disk native contract check\n' >&2
+		return 1
+	}
+	[[ "${restart_section}" == *'herdr pane run "$pane_id" "/quit"'* &&
+		"${restart_section}" == *'wait_for_shell'* &&
+		"${restart_section}" == *'herdr pane run "$pane_id" "$launch_command"'* &&
+		"${restart_section}" == *'run_status_check "$SMOKE_ENTRIES_AFTER_CLEAR"'* ]] || {
+		printf 'smoke does not exercise a synchronized restart check\n' >&2
 		return 1
 	}
 }
