@@ -23,38 +23,22 @@ infrastructure, not a package-user or CI dependency.
 
 ## Isolation and evidence
 
-The script:
+The script proves four obligations:
 
-1. Creates disposable `HOME` and `PI_CODING_AGENT_DIR` trees.
-2. Seeds canonical profile history in the final native schema (with the
-   `clearEpoch` lineage field) plus conflicting HOME-derived legacy history in
-   the pinned legacy schema, each with a distinct secret canary.
-3. Opens a non-focused sibling pane and launches
-   `pi --approve --no-session -e .` with one-run project trust, update checks,
-   and telemetry disabled.
-4. Waits for concrete TUI readiness, invokes `/pi-history status`, and keeps raw
-   pane output only in memory.
-5. Extracts the exact diagnostic line and verifies this contract:
+1. All Pi state is disposable. Canonical native history and conflicting legacy
+   history use distinct synthetic canaries; Pi runs in a non-focused sibling
+   pane with trust, updates, and telemetry disabled.
+2. TUI readiness and `/pi-history status` produce this exact share-safe line:
 
 ```text
 pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=1; cap=42; scope=global
 ```
 
-6. Submits one synthetic capture canary (no model access is needed; the
-   extension records at submit time even if the agent turn fails) and verifies
-   entries reach 2 on disk and in `/pi-history status`.
-7. Runs `/pi-history clear`, confirms the preselected `Yes` selector, and
-   verifies the cleared state in the diagnostic and on disk.
-8. Restarts Pi and verifies the cleared native state survives the relaunch.
-9. After each mutation, checks the on-disk native contract directly: schema
-   version, entry count, and `clearEpoch`/`clearedAt` lineage fields — a
-   fixture or runtime bump that forgets this script fails here.
-10. Verifies count and cap came only from canonical profile storage, not the
-    conflicting legacy fixture, and that every extracted line omits all
-    canaries, the repository path, both history paths, the disposable home,
-    and the agent directory.
-11. Requests a clean Pi exit, closes only the pane it created, and removes all
-    disposable state on success or failure.
+3. Synthetic capture, confirmed clear, and restart agree in diagnostics and on
+   disk, including schema, count, `clearEpoch`, and `clearedAt`; canaries and
+   private paths never appear in extracted diagnostics.
+4. Pi exits cleanly, only the created pane closes, and disposable state is
+   removed after success or failure.
 
 Proven paths: native profile history (schema 3 load, capture rewrite,
 confirmed clear with minted clear epoch, restart reload) and legacy HOME

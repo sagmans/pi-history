@@ -128,48 +128,43 @@ run_status_check() {
 	last_diagnostic="$diagnostic"
 }
 
-count_file_entries() {
-	node -e '
-const fs = require("node:fs");
-try {
-  const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-  process.stdout.write(String(Array.isArray(data.entries) ? data.entries.length : -1));
-} catch {
-  process.stdout.write("-1");
-}
-' "$history_dir/global.json"
-}
-
-wait_for_file_entries() {
-	local expected_count="$1"
+# Poll only publication timing; schema and lineage drift fail immediately once
+# the expected entry count appears.
+wait_for_history_contract() {
+	local epoch_mode="$1" expected_count="$2" output status
 	local deadline=$((SECONDS + CAPTURE_POLL_TIMEOUT_S))
 	for ((;;)); do
-		[[ "$(count_file_entries)" == "$expected_count" ]] && return 0
-		((SECONDS < deadline)) || return 1
-		sleep 0.2
-	done
-}
-
-# On-disk contract check: fails whenever the native schema version or the
-# required clear-lineage fields drift from the runtime that wrote the file.
-check_history_file() {
-	local epoch_mode="$1" expected_count="$2"
-	node - "$history_dir/global.json" "$HISTORY_SCHEMA_VERSION" "$epoch_mode" "$expected_count" <<'NODE'
+		set +e
+		output="$(node - "$history_dir/global.json" "$HISTORY_SCHEMA_VERSION" "$epoch_mode" "$expected_count" 2>&1 <<'NODE'
 const fs = require("node:fs");
 const [file, schemaVersion, epochMode, expectedCount] = process.argv.slice(2);
 const fail = (message) => {
   console.error(`native history contract drift: ${message}`);
   process.exit(1);
 };
-const data = JSON.parse(fs.readFileSync(file, "utf8"));
+let data;
+try {
+  data = JSON.parse(fs.readFileSync(file, "utf8"));
+} catch {
+  process.exit(2);
+}
 if (data.schemaVersion !== Number(schemaVersion)) fail("schemaVersion drift");
-if (!Array.isArray(data.entries) || data.entries.length !== Number(expectedCount)) fail("entries drift");
+if (!Array.isArray(data.entries)) fail("entries drift");
+if (data.entries.length !== Number(expectedCount)) process.exit(2);
 if (epochMode === "null" && data.clearEpoch !== null) fail("clearEpoch must be null before any clear");
 if (epochMode === "minted" && (typeof data.clearEpoch !== "string" || data.clearEpoch.length === 0)) {
   fail("clearEpoch must be an opaque string after a confirmed clear");
 }
 if (epochMode === "minted" && typeof data.clearedAt !== "string") fail("clearedAt marker missing");
 NODE
+)"
+		status=$?
+		set -e
+		[[ "$status" -eq 0 ]] && return 0
+		[[ "$status" -eq 2 ]] || fail "${output:-native history contract check failed}"
+		((SECONDS < deadline)) || fail "history entry count did not reach $expected_count"
+		sleep 0.2
+	done
 }
 
 [[ "${HERDR_ENV:-}" == "1" ]] || fail "HERDR_ENV=1 is required"
@@ -267,9 +262,8 @@ run_status_check "$SMOKE_ENTRIES_SEEDED"
 # One synthetic capture: the extension records at submit time, so the agent
 # turn may fail without provider credentials without affecting this proof.
 herdr pane run "$pane_id" "$CAPTURE_CANARY" >/dev/null
-wait_for_file_entries "$SMOKE_ENTRIES_AFTER_CAPTURE" || fail "synthetic capture was not persisted"
+wait_for_history_contract null "$SMOKE_ENTRIES_AFTER_CAPTURE"
 run_status_check "$SMOKE_ENTRIES_AFTER_CAPTURE"
-check_history_file null "$SMOKE_ENTRIES_AFTER_CAPTURE" || fail "native contract drift after capture"
 
 # Confirmed clear: the dialog is a selector with "Yes" preselected, so a
 # matching selection plus Enter confirms it.
@@ -280,7 +274,7 @@ herdr pane run "$pane_id" "Yes" >/dev/null
 herdr wait output "$pane_id" --match "pi-history cleared" --source recent-unwrapped \
 	--timeout "$STATUS_TIMEOUT_MS" >/dev/null || fail "confirmed clear did not complete"
 run_status_check "$SMOKE_ENTRIES_AFTER_CLEAR"
-check_history_file minted "$SMOKE_ENTRIES_AFTER_CLEAR" || fail "native contract drift after clear"
+wait_for_history_contract minted "$SMOKE_ENTRIES_AFTER_CLEAR"
 
 # Restart persistence: a fresh TUI must load the cleared native state.
 herdr pane run "$pane_id" "/exit" >/dev/null

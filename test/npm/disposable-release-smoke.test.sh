@@ -107,13 +107,6 @@ assert_equal() {
 	fi
 }
 
-assert_hostile_profiles_untouched() {
-	[[ -f "${HOSTILE_HOME}/marker" ]] || return 1
-	[[ -f "${HOSTILE_AGENT_DIR}/marker" ]] || return 1
-	[[ -f "${HOSTILE_SESSION_DIR}/marker" ]] || return 1
-	[[ -f "${HOSTILE_PACKAGE_DIR}/marker" ]] || return 1
-}
-
 assert_disposable_root_removed() {
 	local disposable_root="$1"
 	if [[ -e "${disposable_root}" ]]; then
@@ -155,31 +148,26 @@ test_success_isolates_full_lifecycle() {
 	assert_hostile_profiles_untouched
 }
 
-test_install_failure_cleans_only_disposable_root() {
+assert_failure_cleanup() {
+	local mode="$1" expected_status="$2" invocation="$3"
 	prepare_hostile_profiles
-	run_release_smoke install-failure
-	assert_status 19 || return 1
-	read_invocation 1
+	run_release_smoke "${mode}"
+	assert_status "${expected_status}" || return 1
+	read_invocation "${invocation}"
 	assert_disposable_root_removed "$(dirname "${INVOCATION_HOME}")" || return 1
 	assert_hostile_profiles_untouched
+}
+
+test_install_failure_cleans_only_disposable_root() {
+	assert_failure_cleanup install-failure 19 1
 }
 
 test_runtime_failure_cleans_only_disposable_root() {
-	prepare_hostile_profiles
-	run_release_smoke runtime-failure
-	assert_status 23 || return 1
-	read_invocation 2
-	assert_disposable_root_removed "$(dirname "${INVOCATION_HOME}")" || return 1
-	assert_hostile_profiles_untouched
+	assert_failure_cleanup runtime-failure 23 2
 }
 
 test_interruption_cleans_only_disposable_root() {
-	prepare_hostile_profiles
-	run_release_smoke interrupt
-	assert_status 143 || return 1
-	read_invocation 2
-	assert_disposable_root_removed "$(dirname "${INVOCATION_HOME}")" || return 1
-	assert_hostile_profiles_untouched
+	assert_failure_cleanup interrupt 143 2
 }
 
 run_test 'release smoke isolates install and runtime under one disposable root' test_success_isolates_full_lifecycle
