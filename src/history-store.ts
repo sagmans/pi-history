@@ -90,20 +90,12 @@ export type ClearHistoryResult =
 export type Clock = () => string;
 
 export class HistoryStore {
-	private history: PromptHistoryFile;
-	private blockReason: HistoryBlockReason | undefined;
-	private blockWarnings: string[];
-
 	constructor(
 		private readonly identity: ProjectIdentity,
 		private readonly maxEntries: number,
-		loaded: LoadHistoryResult,
+		private loaded: LoadHistoryResult,
 		private readonly now: Clock = currentIsoTimestamp,
-	) {
-		this.history = loaded.history;
-		this.blockReason = loaded.kind === "blocked" ? loaded.reason : undefined;
-		this.blockWarnings = loaded.warnings;
-	}
+	) {}
 
 	get projectRoot(): string {
 		return this.identity.projectRoot;
@@ -114,23 +106,23 @@ export class HistoryStore {
 	}
 
 	get entries(): readonly HistoryEntry[] {
-		return this.history.entries;
+		return this.loaded.history.entries;
 	}
 
 	get entryCount(): number {
-		return this.history.entries.length;
+		return this.loaded.history.entries.length;
 	}
 
 	get writeBlocked(): boolean {
-		return this.blockReason !== undefined;
+		return this.loaded.kind === "blocked";
 	}
 
 	get writeBlockedReason(): HistoryBlockReason | undefined {
-		return this.blockReason;
+		return this.loaded.kind === "blocked" ? this.loaded.reason : undefined;
 	}
 
 	get warnings(): readonly string[] {
-		return this.blockWarnings;
+		return this.loaded.warnings;
 	}
 
 	async recordPrompt(text: string): Promise<RecordPromptResult> {
@@ -138,11 +130,11 @@ export class HistoryStore {
 		// A session blocked at load time returns from memory instead of re-reading
 		// under the lock on every input: the file is unlikely to self-heal
 		// mid-session, and the next session start restores freshness.
-		if (this.blockReason) {
+		if (this.loaded.kind === "blocked") {
 			return {
 				kind: "blocked",
-				reason: this.blockReason,
-				warnings: this.blockWarnings,
+				reason: this.loaded.reason,
+				warnings: this.loaded.warnings,
 			};
 		}
 
@@ -153,7 +145,7 @@ export class HistoryStore {
 				now: () => timestamp,
 			});
 			if (latest.kind === "blocked") {
-				this.applyBlocked(latest);
+				this.loaded = latest;
 				return {
 					kind: "blocked",
 					reason: latest.reason,
@@ -161,15 +153,15 @@ export class HistoryStore {
 				};
 			}
 
-			const staleMemoryCleared = historyClearsMemory({
-				latest: latest.history,
-				memory: this.history,
-			});
 			const merged = mergeHistories({
 				identity: this.identity,
 				maxEntries: this.maxEntries,
 				now: timestamp,
-				histories: staleMemoryCleared ? [latest.history] : [latest.history, this.history],
+				latest: latest.history,
+				memory:
+					latest.history.clearEpoch === this.loaded.history.clearEpoch
+						? this.loaded.history
+						: undefined,
 			});
 			const nextHistory = upsertPrompt({
 				history: merged,
@@ -178,7 +170,7 @@ export class HistoryStore {
 				now: timestamp,
 			});
 			await writeHistoryFile(this.identity.historyFilePath, nextHistory, fence);
-			this.history = nextHistory;
+			this.loaded = { ...latest, history: nextHistory };
 			return { kind: "recorded", entryCount: nextHistory.entries.length };
 		});
 	}
@@ -187,7 +179,10 @@ export class HistoryStore {
 		// Same stale-safe short-circuit as recordPrompt: a blocked clear returns
 		// from memory; the under-lock revalidation below catches a file that
 		// became blocked after this session loaded ready.
-		const existingBlock = clearBlockResult(this.blockReason, this.blockWarnings);
+		const existingBlock = clearBlockResult(
+			this.loaded.kind === "blocked" ? this.loaded.reason : undefined,
+			this.loaded.warnings,
+		);
 		if (existingBlock) return existingBlock;
 
 		return withHistoryFileLock(this.identity.historyFilePath, async (fence) => {
@@ -200,7 +195,7 @@ export class HistoryStore {
 			if (latest.kind === "blocked") {
 				const latestBlock = clearBlockResult(latest.reason, latest.warnings);
 				if (latestBlock) {
-					this.applyBlocked(latest);
+					this.loaded = latest;
 					return latestBlock;
 				}
 			}
@@ -217,17 +212,9 @@ export class HistoryStore {
 				clearedAt: timestamp,
 			};
 			await writeHistoryFile(this.identity.historyFilePath, nextHistory, fence);
-			this.history = nextHistory;
-			this.blockReason = undefined;
-			this.blockWarnings = [];
+			this.loaded = { kind: "ready", history: nextHistory, warnings: [] };
 			return { kind: "cleared" };
 		});
-	}
-
-	private applyBlocked(loaded: Extract<LoadHistoryResult, { kind: "blocked" }>): void {
-		this.history = loaded.history;
-		this.blockReason = loaded.reason;
-		this.blockWarnings = loaded.warnings;
 	}
 }
 
@@ -349,16 +336,19 @@ function mergeHistories(input: {
 	identity: ProjectIdentity;
 	maxEntries: number;
 	now: string;
-	histories: PromptHistoryFile[];
+	latest: PromptHistoryFile;
+	memory?: PromptHistoryFile;
 }): PromptHistoryFile {
 	const byText = new Map<string, HistoryEntry>();
 	let createdAt = input.now;
 	let updatedAt = input.now;
 	let clearedAt: string | undefined;
-	for (const history of input.histories) {
+	for (const history of input.memory ? [input.latest, input.memory] : [input.latest]) {
 		createdAt = earlierTimestamp(createdAt, history.createdAt);
 		updatedAt = laterTimestamp(updatedAt, history.updatedAt);
-		if (history.clearedAt) clearedAt = laterOptionalTimestamp(clearedAt, history.clearedAt);
+		if (history.clearedAt) {
+			clearedAt = clearedAt ? laterTimestamp(clearedAt, history.clearedAt) : history.clearedAt;
+		}
 		for (const entry of history.entries) {
 			byText.set(entry.text, mergeEntry(byText.get(entry.text), entry));
 		}
@@ -377,20 +367,11 @@ function mergeHistories(input: {
 			createdAt,
 			updatedAt,
 			// Merged histories share one lineage by construction; keep that epoch.
-			clearEpoch: input.histories[0]?.clearEpoch ?? null,
+			clearEpoch: input.latest.clearEpoch,
 			entries,
 		},
 		clearedAt,
 	);
-}
-
-function historyClearsMemory(input: {
-	latest: PromptHistoryFile;
-	memory: PromptHistoryFile;
-}): boolean {
-	// Divergent epochs cannot be merged safely: only disk was revalidated
-	// under the lock, including after a confirmed corrupt-history recovery clear.
-	return input.latest.clearEpoch !== input.memory.clearEpoch;
 }
 
 function tempArtifactPattern(filePath: string): RegExp {
@@ -416,10 +397,6 @@ export async function removeOrphanedTempArtifacts(filePath: string): Promise<voi
 	}
 }
 
-function tempArtifactName(filePath: string): string {
-	return `${filePath}.${process.pid}.${Date.now()}.tmp`;
-}
-
 function mergeEntry(existing: HistoryEntry | undefined, next: HistoryEntry): HistoryEntry {
 	if (!existing) return next;
 	return {
@@ -442,29 +419,21 @@ function parseHistoryText(text: string): ParsedHistoryText {
 	} catch {
 		return { kind: "corrupt" };
 	}
-	// Unknown positive versions may be valid to newer code, so preserve them before validation.
-	if (
-		isRecord(raw) &&
-		isPositiveInteger(raw.schemaVersion) &&
-		raw.schemaVersion !== HISTORY_SCHEMA_VERSION &&
-		raw.schemaVersion !== GENERATION_HISTORY_SCHEMA_VERSION &&
-		raw.schemaVersion !== LEGACY_HISTORY_SCHEMA_VERSION
-	) {
-		return { kind: "unsupported_schema" };
+	if (!isRecord(raw) || !isPositiveInteger(raw.schemaVersion)) return { kind: "corrupt" };
+	// Unknown positive versions may be valid to newer code, so preserve them.
+	switch (raw.schemaVersion) {
+		case HISTORY_SCHEMA_VERSION:
+		case GENERATION_HISTORY_SCHEMA_VERSION:
+		case LEGACY_HISTORY_SCHEMA_VERSION:
+			break;
+		default:
+			return { kind: "unsupported_schema" };
 	}
 	const history = normalizeHistoryFile(raw);
 	return history ? { kind: "ready", history } : { kind: "corrupt" };
 }
 
-function normalizeHistoryFile(raw: unknown): PromptHistoryFile | undefined {
-	if (
-		!isRecord(raw) ||
-		(raw.schemaVersion !== HISTORY_SCHEMA_VERSION &&
-			raw.schemaVersion !== GENERATION_HISTORY_SCHEMA_VERSION &&
-			raw.schemaVersion !== LEGACY_HISTORY_SCHEMA_VERSION)
-	) {
-		return undefined;
-	}
+function normalizeHistoryFile(raw: Record<string, unknown>): PromptHistoryFile | undefined {
 	if (!Array.isArray(raw.entries)) return undefined;
 	const base = normalizeHistoryBase(raw);
 	const entries = normalizeEntries(raw.entries);
@@ -559,7 +528,7 @@ async function writeHistoryFile(
 	fence: HistoryLockFence,
 ): Promise<void> {
 	await ensureHistoryDirectory(filePath);
-	const tempPath = tempArtifactName(filePath);
+	const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
 	const data = `${JSON.stringify(history, null, 2)}\n`;
 	try {
 		await writeFile(tempPath, data, {
@@ -741,8 +710,4 @@ function earlierTimestamp(left: string, right: string): string {
 
 function laterTimestamp(left: string, right: string): string {
 	return left >= right ? left : right;
-}
-
-function laterOptionalTimestamp(left: string | undefined, right: string): string {
-	return left ? laterTimestamp(left, right) : right;
 }

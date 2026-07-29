@@ -54,22 +54,36 @@ const INVALID_SCHEMA_VERSIONS: ReadonlyArray<Readonly<{ label: string; value?: u
 	{ label: "negative", value: -1 },
 	{ label: "fractional", value: 1.5 },
 ];
-const INVALID_CLEAR_GENERATIONS: ReadonlyArray<Readonly<{ label: string; value?: unknown }>> = [
-	{ label: "missing" },
-	{ label: "string", value: "1" },
-	{ label: "null", value: null },
-	{ label: "boolean", value: true },
-	{ label: "negative", value: -1 },
-	{ label: "fractional", value: 0.5 },
-	{ label: "unsafe", value: UNSAFE_CLEAR_GENERATION },
-];
-const INVALID_CLEAR_EPOCHS: ReadonlyArray<Readonly<{ label: string; value?: unknown }>> = [
-	{ label: "missing" },
-	{ label: "number", value: 1 },
-	{ label: "boolean", value: true },
-	{ label: "empty", value: "" },
-	{ label: "overlong", value: OVERLONG_CLEAR_EPOCH },
-];
+const INVALID_CLEAR_METADATA = [
+	{
+		schema: "schema-2",
+		schemaVersion: GENERATION_HISTORY_SCHEMA_VERSION,
+		field: "clearGeneration",
+		name: "clear generation",
+		cases: [
+			{ label: "missing", value: undefined },
+			{ label: "string", value: "1" },
+			{ label: "null", value: null },
+			{ label: "boolean", value: true },
+			{ label: "negative", value: -1 },
+			{ label: "fractional", value: 0.5 },
+			{ label: "unsafe", value: UNSAFE_CLEAR_GENERATION },
+		],
+	},
+	{
+		schema: "schema-3",
+		schemaVersion: HISTORY_SCHEMA_VERSION,
+		field: "clearEpoch",
+		name: "clear epoch",
+		cases: [
+			{ label: "missing", value: undefined },
+			{ label: "number", value: 1 },
+			{ label: "boolean", value: true },
+			{ label: "empty", value: "" },
+			{ label: "overlong", value: OVERLONG_CLEAR_EPOCH },
+		],
+	},
+] as const;
 const LEGACY_MIGRATION_CASES = [
 	{
 		label: "without a clear marker",
@@ -91,6 +105,10 @@ const CAUSAL_CLEAR_CASES = [
 		label: "when clear clocks are equal",
 		secondClearAt: FIRST_CLEAR_TIMESTAMP,
 	},
+] as const;
+const FOREIGN_REVALIDATION_CASES = [
+	{ operation: "record", label: "recording" },
+	{ operation: "clear", label: "replacement" },
 ] as const;
 
 test("missing store loads empty and creates no file until first save", async () => {
@@ -372,55 +390,35 @@ test("record revalidates a newly unsupported schema before recording", async () 
 	});
 });
 
-test("record revalidates a newly foreign project root before recording", async () => {
-	await withStoreFixture(async ({ storePath, loadStore }) => {
-		const store = await loadStore();
-		const foreign = {
-			schemaVersion: HISTORY_SCHEMA_VERSION,
-			clearEpoch: null,
-			projectRoot: "/other/project",
-			createdAt: FIXTURE_TIMESTAMP,
-			updatedAt: FIXTURE_TIMESTAMP,
-			entries: [],
-		};
-		mkdirSync(path.dirname(storePath), { recursive: true });
-		writeFileSync(storePath, `${JSON.stringify(foreign)}\n`, "utf8");
+for (const revalidationCase of FOREIGN_REVALIDATION_CASES) {
+	test(`${revalidationCase.operation} revalidates a newly foreign project root before ${revalidationCase.label}`, async () => {
+		await withStoreFixture(async ({ storePath, loadStore }) => {
+			const store = await loadStore();
+			const foreign = {
+				schemaVersion: HISTORY_SCHEMA_VERSION,
+				clearEpoch: null,
+				projectRoot: "/other/project",
+				createdAt: FIXTURE_TIMESTAMP,
+				updatedAt: FIXTURE_TIMESTAMP,
+				entries: [],
+			};
+			mkdirSync(path.dirname(storePath), { recursive: true });
+			writeFileSync(storePath, `${JSON.stringify(foreign)}\n`, "utf8");
 
-		const recordResult = await store.recordPrompt("alpha");
+			const result =
+				revalidationCase.operation === "record"
+					? await store.recordPrompt("alpha")
+					: await store.clear();
 
-		assert.equal(recordResult.kind, "blocked");
-		if (recordResult.kind === "blocked") {
-			assert.equal(recordResult.reason, "project_root_mismatch");
-		}
-		assert.equal(store.writeBlockedReason, "project_root_mismatch");
-		assert.equal(JSON.parse(readFileSync(storePath, "utf8")).projectRoot, "/other/project");
+			assert.equal(result.kind, "blocked");
+			if (result.kind === "blocked") {
+				assert.equal(result.reason, "project_root_mismatch");
+			}
+			assert.equal(store.writeBlockedReason, "project_root_mismatch");
+			assert.equal(JSON.parse(readFileSync(storePath, "utf8")).projectRoot, "/other/project");
+		});
 	});
-});
-
-test("clear revalidates a newly foreign project root before replacement", async () => {
-	await withStoreFixture(async ({ storePath, loadStore }) => {
-		const store = await loadStore();
-		const foreign = {
-			schemaVersion: HISTORY_SCHEMA_VERSION,
-			clearEpoch: null,
-			projectRoot: "/other/project",
-			createdAt: FIXTURE_TIMESTAMP,
-			updatedAt: FIXTURE_TIMESTAMP,
-			entries: [],
-		};
-		mkdirSync(path.dirname(storePath), { recursive: true });
-		writeFileSync(storePath, `${JSON.stringify(foreign)}\n`, "utf8");
-
-		const clearResult = await store.clear();
-
-		assert.equal(clearResult.kind, "blocked");
-		if (clearResult.kind === "blocked") {
-			assert.equal(clearResult.reason, "project_root_mismatch");
-		}
-		assert.equal(store.writeBlockedReason, "project_root_mismatch");
-		assert.equal(JSON.parse(readFileSync(storePath, "utf8")).projectRoot, "/other/project");
-	});
-});
+}
 
 test("empty prompt skips before an existing block is reported", async () => {
 	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
@@ -470,64 +468,34 @@ for (const invalidSchema of INVALID_SCHEMA_VERSIONS) {
 	});
 }
 
-for (const invalidGeneration of INVALID_CLEAR_GENERATIONS) {
-	test(`schema-2 ${invalidGeneration.label} clear generation is recoverable corruption`, async () => {
-		await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
-			const raw: Record<string, unknown> = {
-				schemaVersion: GENERATION_HISTORY_SCHEMA_VERSION,
-				projectRoot,
-				createdAt: FIXTURE_TIMESTAMP,
-				updatedAt: FIXTURE_TIMESTAMP,
-				entries: [],
-			};
-			if (invalidGeneration.value !== undefined) {
-				raw.clearGeneration = invalidGeneration.value;
-			}
-			mkdirSync(path.dirname(storePath), { recursive: true });
-			writeFileSync(storePath, serializeHistory(raw), "utf8");
+for (const metadata of INVALID_CLEAR_METADATA) {
+	for (const invalidCase of metadata.cases) {
+		test(`${metadata.schema} ${invalidCase.label} ${metadata.name} is recoverable corruption`, async () => {
+			await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
+				const raw: Record<string, unknown> = {
+					schemaVersion: metadata.schemaVersion,
+					projectRoot,
+					createdAt: FIXTURE_TIMESTAMP,
+					updatedAt: FIXTURE_TIMESTAMP,
+					entries: [],
+				};
+				if (invalidCase.value !== undefined) raw[metadata.field] = invalidCase.value;
+				mkdirSync(path.dirname(storePath), { recursive: true });
+				writeFileSync(storePath, serializeHistory(raw), "utf8");
 
-			const store = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
+				const store = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
+				assert.equal(store.writeBlockedReason, "corrupt_history");
 
-			assert.equal(store.writeBlockedReason, "corrupt_history");
+				const clearResult = await store.clear();
+				const saved = JSON.parse(readFileSync(storePath, "utf8"));
 
-			const clearResult = await store.clear();
-			const saved = JSON.parse(readFileSync(storePath, "utf8"));
-
-			assert.deepEqual(clearResult, { kind: "cleared" });
-			assert.equal(store.writeBlocked, false);
-			assert.equal(saved.schemaVersion, HISTORY_SCHEMA_VERSION);
-			assertOpaqueClearEpoch(saved.clearEpoch);
+				assert.deepEqual(clearResult, { kind: "cleared" });
+				assert.equal(store.writeBlocked, false);
+				assert.equal(saved.schemaVersion, HISTORY_SCHEMA_VERSION);
+				assertOpaqueClearEpoch(saved.clearEpoch);
+			});
 		});
-	});
-}
-
-for (const invalidEpoch of INVALID_CLEAR_EPOCHS) {
-	test(`schema-3 ${invalidEpoch.label} clear epoch is recoverable corruption`, async () => {
-		await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
-			const raw: Record<string, unknown> = {
-				schemaVersion: HISTORY_SCHEMA_VERSION,
-				projectRoot,
-				createdAt: FIXTURE_TIMESTAMP,
-				updatedAt: FIXTURE_TIMESTAMP,
-				entries: [],
-			};
-			if (invalidEpoch.value !== undefined) raw.clearEpoch = invalidEpoch.value;
-			mkdirSync(path.dirname(storePath), { recursive: true });
-			writeFileSync(storePath, serializeHistory(raw), "utf8");
-
-			const store = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
-
-			assert.equal(store.writeBlockedReason, "corrupt_history");
-
-			const clearResult = await store.clear();
-			const saved = JSON.parse(readFileSync(storePath, "utf8"));
-
-			assert.deepEqual(clearResult, { kind: "cleared" });
-			assert.equal(store.writeBlocked, false);
-			assert.equal(saved.schemaVersion, HISTORY_SCHEMA_VERSION);
-			assertOpaqueClearEpoch(saved.clearEpoch);
-		});
-	});
+	}
 }
 
 test("corrupt-history recovery clear supersedes stale-epoch memory", async () => {
