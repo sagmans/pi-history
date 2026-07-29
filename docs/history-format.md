@@ -44,4 +44,3 @@ Return to a release that understands the newest schema; do not edit, trim, or
 regenerate the history file by hand. Manual edits can mint false lineages or
 destroy clear evidence, and the format treats malformed content as corruption
 that only a confirmed clear can replace.
-
