@@ -53,7 +53,7 @@ test_smoke_exercises_capture_clear_and_restart() {
 		printf 'smoke does not exercise one synthetic capture\n' >&2
 		return 1
 	}
-	[[ "${script}" == *'wait_for_history_contract'* ]] || {
+	[[ "${script}" == *'check_history_file'* ]] || {
 		printf 'smoke lacks the on-disk native contract check\n' >&2
 		return 1
 	}
