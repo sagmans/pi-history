@@ -27,20 +27,22 @@ readonly GLOBAL_SCOPE_KEY="<global>"
 readonly SMOKE_CANARY="PI_HISTORY_SMOKE_SECRET_7E4A9C2D"
 readonly LEGACY_SMOKE_CANARY="PI_HISTORY_LEGACY_SECRET_8F5B0D3E"
 readonly CAPTURE_CANARY="PI_HISTORY_SMOKE_CAPTURE_1A2B3C4D"
-readonly RESTART_MARKER="PI_HISTORY_SMOKE_RESTART_9F8E7D6C"
+readonly STATUS_MARKER_PREFIX="PI_HISTORY_SMOKE_STATUS_"
+readonly SHELL_READY_PREFIX="PI_HISTORY_SMOKE_"
+readonly SHELL_READY_SUFFIX="SHELL_READY_4C6D8E"
 readonly FIXTURE_TIMESTAMP="2026-01-01T00:00:00.000Z"
 readonly CAPTURE_POLL_TIMEOUT_S="10"
-readonly EXIT_SETTLE_DELAY_S="2"
 readonly RESTART_BOOT_DELAY_S="3"
 
 smoke_root=""
 pane_id=""
+status_sequence=0
 
 cleanup() {
 	local exit_code=$?
 	trap - EXIT INT TERM
 	if [[ -n "$pane_id" ]]; then
-		herdr pane run "$pane_id" "/exit" >/dev/null 2>&1 || true
+		herdr pane run "$pane_id" "/quit" >/dev/null 2>&1 || true
 		herdr pane close "$pane_id" >/dev/null 2>&1 || true
 	fi
 	if [[ -n "$smoke_root" && -d "$smoke_root" ]]; then
@@ -59,10 +61,12 @@ require_command_surface() {
 	local pane_help wait_help
 	pane_help="$(herdr pane 2>&1 || true)"
 	wait_help="$(herdr wait 2>&1 || true)"
-	for command in "pane split" "pane run" "pane read" "pane close"; do
+	for command in "pane split" "pane run" "pane read" "pane process-info" "pane send-keys" "pane close"; do
 		[[ "$pane_help" == *"$command"* ]] || fail "Herdr lacks required '$command' command"
 	done
-	[[ "$wait_help" == *"wait output"* ]] || fail "Herdr lacks required 'wait output' command"
+	for command in "wait output" "wait agent-status"; do
+		[[ "$wait_help" == *"$command"* ]] || fail "Herdr lacks required '$command' command"
+	done
 }
 
 parse_pane_id() {
@@ -78,32 +82,55 @@ process.stdin.on("end", () => {
 '
 }
 
+shell_is_foreground() {
+	herdr pane process-info --pane "$pane_id" | node -e '
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => { input += chunk; });
+process.stdin.on("end", () => {
+  const info = JSON.parse(input)?.result?.process_info;
+  const processes = info?.foreground_processes;
+  if (!info || !Array.isArray(processes)) process.exit(1);
+  if (processes.length === 0 || processes.every((process) => process.pid === info.shell_pid)) return;
+  process.exit(1);
+});
+'
+}
+
+wait_for_shell() {
+	local deadline=$((SECONDS + READY_TIMEOUT_MS / 1000))
+	for ((;;)); do
+		shell_is_foreground && return 0
+		((SECONDS < deadline)) || return 1
+		sleep 0.2
+	done
+}
+
 extract_diagnostic() {
 	node -e '
 let input = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => { input += chunk; });
 process.stdin.on("end", () => {
-  let values = [input];
-  try {
-    const visit = (value) => {
-      if (typeof value === "string") values.push(value);
-      else if (Array.isArray(value)) value.forEach(visit);
-      else if (value && typeof value === "object") Object.values(value).forEach(visit);
-    };
-    visit(JSON.parse(input));
-  } catch {}
-  const prefix = "pi-history: diagnosticsVersion=";
-  const matches = values.flatMap((value) => {
-    const start = value.lastIndexOf(prefix);
-    if (start < 0) return [];
-    const segment = value.slice(start).match(/^pi-history: diagnosticsVersion=[\s\S]*?scope=[a-z_]+/);
-    return segment ? [segment[0].replace(/\s+/g, " ").trim()] : [];
-  });
-  if (matches.length === 0) process.exit(1);
-  process.stdout.write(matches.at(-1));
+  const expected = process.argv[1];
+  const marker = process.argv[2];
+  const escapeChar = (char) => char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (marker) {
+    const escapedMarker = [...marker].map(escapeChar).join("\\s*");
+    const markerPattern = new RegExp(`Session\\s*name\\s*set:\\s*${escapedMarker}`, "g");
+    const matches = [...input.matchAll(markerPattern)];
+    const match = matches.at(-1);
+    if (!match) process.exit(1);
+    input = input.slice(match.index + match[0].length);
+  }
+  const compactExpected = expected.replace(/\s+/g, "");
+  const escapedExpected = [...compactExpected].map(escapeChar).join("\\s*");
+  const pattern = new RegExp(`${escapedExpected}(?=[ \\t]*(?:\\r?\\n|$))`, "g");
+  // Rendered soft wraps add whitespace; source-level tests pin exact spacing.
+  if (![...input.matchAll(pattern)].at(-1)) process.exit(1);
+  process.stdout.write(expected);
 });
-'
+' "$1" "${2:-}"
 }
 
 expected_diagnostic() {
@@ -111,15 +138,32 @@ expected_diagnostic() {
 		"$DIAGNOSTICS_VERSION" "$1" "$SMOKE_MAX_ENTRIES"
 }
 
-run_status_check() {
-	local expected_entries="$1"
-	herdr pane run "$pane_id" "/pi-history status" >/dev/null
-	herdr wait output "$pane_id" --match "pi-history: diagnosticsVersion=$DIAGNOSTICS_VERSION;" --source recent-unwrapped \
-		--timeout "$STATUS_TIMEOUT_MS" >/dev/null || fail "versioned diagnostic did not appear"
+wait_for_diagnostic() {
+	local expected="$1" marker="$2" deadline=$((SECONDS + STATUS_TIMEOUT_MS / 1000))
 	local pane_json diagnostic
-	pane_json="$(herdr pane read "$pane_id" --source recent-unwrapped --lines "$CAPTURE_LINES" --format text)"
-	diagnostic="$(printf '%s' "$pane_json" | extract_diagnostic)" || fail "unable to extract diagnostic line"
-	[[ "$diagnostic" == "$(expected_diagnostic "$expected_entries")" ]] || fail "diagnostic contract mismatch"
+	for ((;;)); do
+		pane_json="$(herdr pane read "$pane_id" --source recent-unwrapped --lines "$CAPTURE_LINES" --format text)" || return 1
+		if diagnostic="$(printf '%s' "$pane_json" | extract_diagnostic "$expected" "$marker")"; then
+			printf '%s' "$diagnostic"
+			return 0
+		fi
+		((SECONDS < deadline)) || return 1
+		sleep 0.2
+	done
+}
+
+run_status_check() {
+	local expected_entries="$1" expected marker diagnostic
+	expected="$(expected_diagnostic "$expected_entries")"
+	((status_sequence += 1))
+	marker="${STATUS_MARKER_PREFIX}${status_sequence}"
+	herdr pane run "$pane_id" "/name $marker" >/dev/null
+	herdr wait output "$pane_id" --match "$marker" --source recent-unwrapped \
+		--timeout "$STATUS_TIMEOUT_MS" >/dev/null || fail "status freshness marker did not appear"
+	herdr pane run "$pane_id" "/pi-history status" >/dev/null
+	diagnostic="$(wait_for_diagnostic "$expected" "$marker")" ||
+		fail "expected diagnostic for entries=$expected_entries did not appear"
+	[[ "$diagnostic" == "$expected" ]] || fail "diagnostic contract mismatch"
 	local private_value
 	for private_value in "$SMOKE_CANARY" "$LEGACY_SMOKE_CANARY" "$CAPTURE_CANARY" \
 		"$repo_root" "$history_dir" "$legacy_history_dir" "$smoke_root" "$smoke_home" "$agent_dir"; do
@@ -255,12 +299,11 @@ herdr wait output "$pane_id" --match "$(basename -- "$repo_root")" --source rece
 	--timeout "$READY_TIMEOUT_MS" >/dev/null || fail "created shell did not become ready"
 
 pi_version="$($pi_bin --version)"
-printf -v launch_command 'exec env HOME=%q PI_CODING_AGENT_DIR=%q PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0 %q --approve --no-session -e .' \
+printf -v launch_command 'env HOME=%q PI_CODING_AGENT_DIR=%q PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0 %q --approve --no-session -e .' \
 	"$smoke_home" "$agent_dir" "$pi_bin"
 herdr pane run "$pane_id" "$launch_command" >/dev/null
 herdr wait output "$pane_id" --match "pi v$pi_version" --source recent-unwrapped \
 	--timeout "$READY_TIMEOUT_MS" >/dev/null || fail "Pi TUI did not become ready"
-
 last_diagnostic=""
 run_status_check "$SMOKE_ENTRIES_SEEDED"
 
@@ -268,6 +311,9 @@ run_status_check "$SMOKE_ENTRIES_SEEDED"
 # turn may fail without provider credentials without affecting this proof.
 herdr pane run "$pane_id" "$CAPTURE_CANARY" >/dev/null
 wait_for_file_entries "$SMOKE_ENTRIES_AFTER_CAPTURE" || fail "synthetic capture was not persisted"
+herdr pane send-keys "$pane_id" Escape >/dev/null
+herdr wait agent-status "$pane_id" --status idle \
+	--timeout "$STATUS_TIMEOUT_MS" >/dev/null || fail "Pi TUI did not return to command mode"
 run_status_check "$SMOKE_ENTRIES_AFTER_CAPTURE"
 check_history_file null "$SMOKE_ENTRIES_AFTER_CAPTURE" || fail "native contract drift after capture"
 
@@ -283,11 +329,14 @@ run_status_check "$SMOKE_ENTRIES_AFTER_CLEAR"
 check_history_file minted "$SMOKE_ENTRIES_AFTER_CLEAR" || fail "native contract drift after clear"
 
 # Restart persistence: a fresh TUI must load the cleared native state.
-herdr pane run "$pane_id" "/exit" >/dev/null
-sleep "$EXIT_SETTLE_DELAY_S"
-herdr pane run "$pane_id" "$launch_command # $RESTART_MARKER" >/dev/null
-herdr wait output "$pane_id" --match "$RESTART_MARKER" --source recent-unwrapped \
-	--timeout "$READY_TIMEOUT_MS" >/dev/null || fail "Pi relaunch command did not land"
+herdr pane run "$pane_id" "/quit" >/dev/null
+wait_for_shell || fail "Pi TUI did not exit before restart"
+restart_shell_marker="${SHELL_READY_PREFIX}${SHELL_READY_SUFFIX}"
+printf -v restart_shell_probe 'printf %%s%%s\\n %q %q' "$SHELL_READY_PREFIX" "$SHELL_READY_SUFFIX"
+herdr pane run "$pane_id" "$restart_shell_probe" >/dev/null
+herdr wait output "$pane_id" --match "$restart_shell_marker" --source recent-unwrapped \
+	--timeout "$READY_TIMEOUT_MS" >/dev/null || fail "shell did not become ready after Pi exit"
+herdr pane run "$pane_id" "$launch_command" >/dev/null
 sleep "$RESTART_BOOT_DELAY_S"
 run_status_check "$SMOKE_ENTRIES_AFTER_CLEAR"
 
