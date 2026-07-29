@@ -402,8 +402,7 @@ for (const revalidationCase of FOREIGN_REVALIDATION_CASES) {
 				updatedAt: FIXTURE_TIMESTAMP,
 				entries: [],
 			};
-			mkdirSync(path.dirname(storePath), { recursive: true });
-			writeFileSync(storePath, `${JSON.stringify(foreign)}\n`, "utf8");
+			seedHistoryFile(storePath, foreign);
 
 			const result =
 				revalidationCase.operation === "record"
@@ -450,8 +449,7 @@ for (const invalidSchema of INVALID_SCHEMA_VERSIONS) {
 				entries: [],
 			};
 			if (invalidSchema.value !== undefined) raw.schemaVersion = invalidSchema.value;
-			mkdirSync(path.dirname(storePath), { recursive: true });
-			writeFileSync(storePath, serializeHistory(raw), "utf8");
+			seedHistoryFile(storePath, raw);
 
 			const store = await loadStore();
 			assert.equal(store.writeBlockedReason, "corrupt_history");
@@ -480,8 +478,7 @@ for (const metadata of INVALID_CLEAR_METADATA) {
 					entries: [],
 				};
 				if (invalidCase.value !== undefined) raw[metadata.field] = invalidCase.value;
-				mkdirSync(path.dirname(storePath), { recursive: true });
-				writeFileSync(storePath, serializeHistory(raw), "utf8");
+				seedHistoryFile(storePath, raw);
 
 				const store = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
 				assert.equal(store.writeBlockedReason, "corrupt_history");
@@ -500,32 +497,23 @@ for (const metadata of INVALID_CLEAR_METADATA) {
 
 test("corrupt-history recovery clear supersedes stale-epoch memory", async () => {
 	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
-		mkdirSync(path.dirname(storePath), { recursive: true });
-		writeFileSync(
-			storePath,
-			serializeHistory({
-				schemaVersion: HISTORY_SCHEMA_VERSION,
-				clearEpoch: STALE_CLEAR_EPOCH,
-				projectRoot,
-				createdAt: FIXTURE_TIMESTAMP,
-				updatedAt: FIXTURE_TIMESTAMP,
-				clearedAt: FIXTURE_TIMESTAMP,
-				entries: [LEGACY_ENTRY],
-			}),
-			"utf8",
-		);
+		seedHistoryFile(storePath, {
+			schemaVersion: HISTORY_SCHEMA_VERSION,
+			clearEpoch: STALE_CLEAR_EPOCH,
+			projectRoot,
+			createdAt: FIXTURE_TIMESTAMP,
+			updatedAt: FIXTURE_TIMESTAMP,
+			clearedAt: FIXTURE_TIMESTAMP,
+			entries: [LEGACY_ENTRY],
+		});
 		const stale = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
-		writeFileSync(
-			storePath,
-			serializeHistory({
-				schemaVersion: HISTORY_SCHEMA_VERSION,
-				projectRoot,
-				createdAt: FIXTURE_TIMESTAMP,
-				updatedAt: FIXTURE_TIMESTAMP,
-				entries: [],
-			}),
-			"utf8",
-		);
+		seedHistoryFile(storePath, {
+			schemaVersion: HISTORY_SCHEMA_VERSION,
+			projectRoot,
+			createdAt: FIXTURE_TIMESTAMP,
+			updatedAt: FIXTURE_TIMESTAMP,
+			entries: [],
+		});
 		const recovery = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
 		assert.equal(recovery.writeBlockedReason, "corrupt_history");
 
@@ -561,35 +549,26 @@ test("repeated clears mint distinct epochs without a terminal state", async () =
 
 test("distinct legacy schema-1 clears never collapse into one lineage", async () => {
 	await withStoreFixture(async ({ projectRoot, storePath, loadStore }) => {
-		mkdirSync(path.dirname(storePath), { recursive: true });
 		// An old writer's cleared file: the marker proves one clear happened.
-		writeFileSync(
-			storePath,
-			serializeHistory({
-				schemaVersion: LEGACY_HISTORY_SCHEMA_VERSION,
-				projectRoot,
-				createdAt: FIXTURE_TIMESTAMP,
-				updatedAt: FIXTURE_TIMESTAMP,
-				clearedAt: FIXTURE_TIMESTAMP,
-				entries: [LEGACY_ENTRY],
-			}),
-			"utf8",
-		);
+		seedHistoryFile(storePath, {
+			schemaVersion: LEGACY_HISTORY_SCHEMA_VERSION,
+			projectRoot,
+			createdAt: FIXTURE_TIMESTAMP,
+			updatedAt: FIXTURE_TIMESTAMP,
+			clearedAt: FIXTURE_TIMESTAMP,
+			entries: [LEGACY_ENTRY],
+		});
 		const stale = await loadStore({ clock: () => FIXTURE_TIMESTAMP });
 
 		// The old writer clears again on an equal clock; this is a distinct clear.
-		writeFileSync(
-			storePath,
-			serializeHistory({
-				schemaVersion: LEGACY_HISTORY_SCHEMA_VERSION,
-				projectRoot,
-				createdAt: FIXTURE_TIMESTAMP,
-				updatedAt: FIXTURE_TIMESTAMP,
-				clearedAt: FIXTURE_TIMESTAMP,
-				entries: [],
-			}),
-			"utf8",
-		);
+		seedHistoryFile(storePath, {
+			schemaVersion: LEGACY_HISTORY_SCHEMA_VERSION,
+			projectRoot,
+			createdAt: FIXTURE_TIMESTAMP,
+			updatedAt: FIXTURE_TIMESTAMP,
+			clearedAt: FIXTURE_TIMESTAMP,
+			entries: [],
+		});
 
 		await stale.recordPrompt(POST_CLEAR_PROMPT);
 
@@ -613,8 +592,7 @@ test("malformed schema-1 content remains recoverable corruption", async () => {
 			updatedAt: FIXTURE_TIMESTAMP,
 			entries: [{ text: "synthetic prompt with missing fields" }],
 		};
-		mkdirSync(path.dirname(storePath), { recursive: true });
-		writeFileSync(storePath, serializeHistory(raw), "utf8");
+		seedHistoryFile(storePath, raw);
 
 		const store = await loadStore();
 		assert.equal(store.writeBlockedReason, "corrupt_history");
@@ -637,8 +615,7 @@ test("project mismatch blocks writes instead of merging histories", async () => 
 			updatedAt: FIXTURE_TIMESTAMP,
 			entries: [],
 		};
-		mkdirSync(path.dirname(storePath), { recursive: true });
-		writeFileSync(storePath, `${JSON.stringify(foreign)}\n`, "utf8");
+		seedHistoryFile(storePath, foreign);
 
 		const store = await loadStore();
 		const result = await store.recordPrompt("alpha");
@@ -1062,6 +1039,11 @@ async function withStoreFixture(testBody: (fixture: Fixture) => Promise<void>): 
 
 function serializeHistory(history: unknown): string {
 	return `${JSON.stringify(history, null, 2)}\n`;
+}
+
+function seedHistoryFile(storePath: string, history: unknown): void {
+	mkdirSync(path.dirname(storePath), { recursive: true });
+	writeFileSync(storePath, serializeHistory(history), "utf8");
 }
 
 function writeLockOwnerFixture(

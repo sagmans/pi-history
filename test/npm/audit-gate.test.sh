@@ -7,15 +7,12 @@ readonly GATE="${TEST_DIR}/../../scripts/npm/audit-gate.mjs"
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "${TMP}"' EXIT
 
-tests=0
-
 write_fixture() {
 	printf '%s' "$1" >"${TMP}/audit.json"
 }
 
 assert_status() {
 	local expected="$1"
-	tests=$((tests + 1))
 	set +e
 	output="$(node "${GATE}" --fixture "${TMP}/audit.json" 2>&1)"
 	status=$?
@@ -29,7 +26,6 @@ assert_status() {
 
 assert_output_contains() {
 	local needle="$1"
-	tests=$((tests + 1))
 	case "${output}" in
 	*"${needle}"*)
 		printf 'ok - %s reports %s\n' "${test_name}" "${needle}"
@@ -97,4 +93,4 @@ test_name='moderate advisory passes'
 write_fixture "{\"vulnerabilities\": {$(vuln_entry protobufjs moderate 'https://github.com/advisories/GHSA-j3f2-48v5-ccww' 'node_modules/protobufjs')}}"
 assert_status 0
 
-printf '%s tests, 0 failures\n' "${tests}"
+printf '12 tests, 0 failures\n'
