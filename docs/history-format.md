@@ -13,7 +13,8 @@ what older releases do afterward. This document is normative: tests in
 | 3 | next release | opaque per-clear `clearEpoch` |
 
 Schema 2 existed only on a development branch. The runtime still migrates it
-so disposable and pre-release installs are never stranded.
+so disposable and pre-release installs are never stranded. `clearedAt` remains
+informational; only `clearEpoch` establishes clear lineage.
 
 ## When the on-disk format changes
 
@@ -44,11 +45,3 @@ regenerate the history file by hand. Manual edits can mint false lineages or
 destroy clear evidence, and the format treats malformed content as corruption
 that only a confirmed clear can replace.
 
-## Rollback expectations
-
-- Schema 1 and 2 files migrate forward losslessly, including their clear
-  markers.
-- There is no supported path from schema 3 back to an older format; older
-  releases fail closed by design.
-- `clearedAt` is informational metadata. Causal ordering of clears comes from
-  `clearEpoch`, never from wall-clock time.
