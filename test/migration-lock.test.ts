@@ -1,5 +1,13 @@
 import { strict as assert } from "node:assert";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	statSync,
+	utimesSync,
+	writeFileSync,
+} from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,6 +17,9 @@ import { LOCK_REMOVAL_CLAIM_DIRECTORY } from "../src/lock-directory.ts";
 import { withMigrationLock } from "../src/migration-lock.ts";
 
 const OWNER_FILE_NAME = "owner.json";
+const FIXTURE_TIMESTAMP = "2026-07-01T00:00:00.000Z";
+const HEARTBEAT_INTERVAL_MS = 5_000;
+const HEARTBEAT_STALE_MS = 30_000;
 
 test("withMigrationLock reclaims a dead owner", async () => {
 	await withFixture(async (lockPath) => {
@@ -99,12 +110,10 @@ test("withMigrationLock reclaims an abandoned lock whose PID was reused", async 
 			createdAt: new Date().toISOString(),
 			token: "reused-pid-owner",
 		});
-		const staleTime = new Date(Date.now() - 10_000);
+		const staleTime = new Date("2000-01-01T00:00:00.000Z");
 		utimesSync(ownerPath, staleTime, staleTime);
 
-		const waiting = withMigrationLock(lockPath, async () => "completed", {
-			heartbeatStaleMs: 100,
-		});
+		const waiting = withMigrationLock(lockPath, async () => "completed");
 		const acquiredQuickly = await Promise.race([
 			waiting.then(() => true),
 			delay(500).then(() => false),
@@ -162,27 +171,28 @@ test("migration reclaimers preserve a claimed stale owner", async () => {
 	});
 });
 
-test("withMigrationLock heartbeat keeps a genuine live owner protected", async () => {
+test("withMigrationLock heartbeat keeps a genuine live owner protected", async (context) => {
+	context.mock.timers.enable({
+		apis: ["Date", "setInterval"],
+		now: new Date(FIXTURE_TIMESTAMP),
+	});
 	await withFixture(async (lockPath) => {
 		const ownerMayFinish = deferred();
-		const owner = withMigrationLock(
-			lockPath,
-			async () => {
-				await ownerMayFinish.promise;
-			},
-			{ heartbeatIntervalMs: 20 },
-		);
-		await waitFor(() => existsSync(path.join(lockPath, OWNER_FILE_NAME)));
+		const owner = withMigrationLock(lockPath, async () => {
+			await ownerMayFinish.promise;
+		});
+		const ownerPath = path.join(lockPath, OWNER_FILE_NAME);
+		await waitFor(() => existsSync(ownerPath));
+
+		context.mock.timers.tick(HEARTBEAT_STALE_MS + HEARTBEAT_INTERVAL_MS);
+		await delay(10);
+		assert.equal(statSync(ownerPath).mtimeMs, Date.now());
 
 		let entered = false;
-		const contender = withMigrationLock(
-			lockPath,
-			async () => {
-				entered = true;
-			},
-			{ heartbeatStaleMs: 80 },
-		);
-		await delay(200);
+		const contender = withMigrationLock(lockPath, async () => {
+			entered = true;
+		});
+		await delay(100);
 		assert.equal(entered, false);
 
 		ownerMayFinish.resolve();

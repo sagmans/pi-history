@@ -24,22 +24,12 @@ type MigrationLockOwner = {
 	token: string;
 };
 
-export type MigrationLockTiming = {
-	heartbeatIntervalMs: number;
-	heartbeatStaleMs: number;
-};
-
 export async function withMigrationLock<Result>(
 	lockPath: string,
 	operation: () => Promise<Result>,
-	timing?: Partial<MigrationLockTiming>,
 ): Promise<Result> {
-	const heartbeatStaleMs = timing?.heartbeatStaleMs ?? HEARTBEAT_STALE_MS;
-	const owner = await acquireMigrationLock(lockPath, heartbeatStaleMs);
-	const heartbeat = startOwnerHeartbeat(
-		path.join(lockPath, LOCK_OWNER_FILE),
-		timing?.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS,
-	);
+	const owner = await acquireMigrationLock(lockPath);
+	const heartbeat = startOwnerHeartbeat(path.join(lockPath, LOCK_OWNER_FILE));
 	try {
 		return await operation();
 	} finally {
@@ -50,19 +40,16 @@ export async function withMigrationLock<Result>(
 
 // A reused PID can fake process existence but cannot refresh this file, so the
 // heartbeat is the portable proof that the original owner is still alive.
-function startOwnerHeartbeat(ownerPath: string, intervalMs: number): { stop: () => void } {
+function startOwnerHeartbeat(ownerPath: string): { stop: () => void } {
 	const timer = setInterval(() => {
 		const now = new Date();
 		utimes(ownerPath, now, now).catch(() => {});
-	}, intervalMs);
+	}, HEARTBEAT_INTERVAL_MS);
 	timer.unref();
 	return { stop: () => clearInterval(timer) };
 }
 
-async function acquireMigrationLock(
-	lockPath: string,
-	heartbeatStaleMs: number,
-): Promise<MigrationLockOwner> {
+async function acquireMigrationLock(lockPath: string): Promise<MigrationLockOwner> {
 	for (;;) {
 		try {
 			await mkdir(lockPath, { mode: PRIVATE_DIR_MODE });
@@ -76,7 +63,7 @@ async function acquireMigrationLock(
 			return owner;
 		} catch (error) {
 			if (!hasErrorCode(error, "EEXIST")) throw error;
-			if (await reclaimAbandonedMigrationLock(lockPath, heartbeatStaleMs)) continue;
+			if (await reclaimAbandonedMigrationLock(lockPath)) continue;
 			// Live migration owns the cutoff boundary; waiting is safer than
 			// allowing writable initialization to race ahead of the snapshot.
 			await delay(LOCK_RETRY_DELAY_MS);
@@ -93,10 +80,7 @@ function createMigrationLockOwner(): MigrationLockOwner {
 	};
 }
 
-async function reclaimAbandonedMigrationLock(
-	lockPath: string,
-	heartbeatStaleMs: number,
-): Promise<boolean> {
+async function reclaimAbandonedMigrationLock(lockPath: string): Promise<boolean> {
 	let lockStats: Stats;
 	try {
 		lockStats = await lstat(lockPath);
@@ -107,12 +91,11 @@ async function reclaimAbandonedMigrationLock(
 	if (!lockStats.isDirectory()) throw new Error("migration lock is unsafe");
 	const owner = await readMigrationLockOwner(lockPath);
 	if (owner) {
-		if (await migrationLockOwnerIsActive(lockPath, owner, heartbeatStaleMs)) return false;
+		if (await migrationLockOwnerIsActive(lockPath, owner)) return false;
 		return removeLockDirectoryIf(lockPath, async () => {
 			const current = await readMigrationLockOwner(lockPath);
 			return (
-				current?.token === owner.token &&
-				!(await migrationLockOwnerIsActive(lockPath, current, heartbeatStaleMs))
+				current?.token === owner.token && !(await migrationLockOwnerIsActive(lockPath, current))
 			);
 		});
 	}
@@ -167,7 +150,6 @@ function normalizeMigrationLockOwner(raw: unknown): MigrationLockOwner | undefin
 async function migrationLockOwnerIsActive(
 	lockPath: string,
 	owner: MigrationLockOwner,
-	heartbeatStaleMs: number,
 ): Promise<boolean> {
 	if (owner.host !== hostname()) {
 		const createdAt = Date.parse(owner.createdAt);
@@ -182,5 +164,5 @@ async function migrationLockOwnerIsActive(
 	// only a fresh heartbeat proves the original owner still holds the lock.
 	const ownerStats = await lstat(path.join(lockPath, LOCK_OWNER_FILE)).catch(() => undefined);
 	if (!ownerStats) return false;
-	return Date.now() - ownerStats.mtimeMs <= heartbeatStaleMs;
+	return Date.now() - ownerStats.mtimeMs <= HEARTBEAT_STALE_MS;
 }
