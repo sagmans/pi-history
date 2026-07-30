@@ -6,6 +6,8 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-30
+
 ### Changed
 
 - Raised Pi development dependencies to 0.82.1, clearing the nested protobufjs advisory; the release audit gate now waives only the remaining dev-only brace-expansion advisory, which is pinned inside Pi's own published shrinkwrap and scoped to its exact install path until an upstream release resolves it.
@@ -20,6 +22,7 @@ All notable changes to this project are documented here. This format follows
 - Release-workflow validation now parses the workflow structurally and verifies the tag trigger, approval-gated environment, effective `id-token: write` permission, and hardened publish command on the single intended publish job; duplicate keys, split controls, misleading text, anchors, and aliases fail closed.
 - The Herdr maintainer smoke now seeds the final native history schema with clear-lineage metadata, keeps the legacy fixture pinned to schema 1, and exercises one synthetic capture, a confirmed clear, and a restart, with on-disk contract checks that fail on any schema or lineage drift.
 - Isolated release smoke installs and runtime checks under one disposable Pi storage root with cleanup on success, failure, and interruption.
+
 ## [0.1.4] - 2026-07-23
 
 ### Added
@@ -76,7 +79,8 @@ All notable changes to this project are documented here. This format follows
 - `/pi-history status` (metadata only) and `/pi-history clear` (confirmed wipe with a clear marker so older open sessions cannot restore entries).
 - Graceful fallback when ghost completion editor support is unavailable; `Ctrl+R` remains available.
 
-[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/sagmans/pi-history/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/sagmans/pi-history/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/sagmans/pi-history/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/sagmans/pi-history/compare/v0.1.1...v0.1.2
