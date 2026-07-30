@@ -42,6 +42,24 @@ entry must match the narrowest practical pattern and document why the matched
 value cannot authenticate; blanket file or directory exclusions are not
 permitted.
 
+## Dependency advisories
+
+The release audit gate (`npm run audit`) fails on any high or critical
+advisory. Waivers live in `scripts/npm/audit-gate.mjs` and are scoped to one
+advisory URL at one exact install path; the same advisory appearing anywhere
+else still fails the gate.
+
+Currently waived:
+
+- `GHSA-mh99-v99m-4gvg` (`brace-expansion <=5.0.7`, dev-only): the vulnerable
+  version is pinned inside `@earendil-works/pi-coding-agent`'s own published
+  `npm-shrinkwrap.json`, which npm honors over any consumer-side lockfile or
+  override. The package is a development dependency and is never shipped to
+  users, and exploitation requires attacker-controlled glob input reaching
+  minimatch inside Pi's internals. Re-examine on every Pi upgrade (tracked at
+  `earendil-works/pi#5653`); remove the waiver once an upstream release
+  resolves `brace-expansion` to 5.0.8+.
+
 ## Supported versions
 
 Only the latest release tag receives security fixes. There is no long-term

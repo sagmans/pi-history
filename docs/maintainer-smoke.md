@@ -23,28 +23,28 @@ infrastructure, not a package-user or CI dependency.
 
 ## Isolation and evidence
 
-The script:
+The script proves four obligations:
 
-1. Creates disposable `HOME` and `PI_CODING_AGENT_DIR` trees.
-2. Seeds canonical profile history plus conflicting HOME-derived legacy history,
-   each with a distinct secret canary, without submitting any model prompt.
-3. Opens a non-focused sibling pane and launches
-   `pi --approve --no-session -e .` with one-run project trust, update checks,
-   and telemetry disabled.
-4. Waits for concrete TUI readiness, invokes `/pi-history status`, and keeps raw
-   pane output only in memory.
-5. Extracts the exact diagnostic line and verifies this contract:
+1. All Pi state is disposable. Canonical native history and conflicting legacy
+   history use distinct synthetic canaries; Pi runs in a non-focused sibling
+   pane with trust, updates, and telemetry disabled.
+2. TUI readiness and `/pi-history status` produce this exact share-safe line:
 
 ```text
 pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=1; cap=42; scope=global
 ```
 
-6. Verifies count and cap came only from canonical profile storage, not the
-   conflicting legacy fixture.
-7. Verifies the extracted line omits both canaries, repository path, both
-   history paths, disposable home, and agent directory.
-8. Requests a clean Pi exit, closes only the pane it created, and removes all
-   disposable state on success or failure.
+3. Synthetic capture, confirmed clear, and restart agree in diagnostics and on
+   disk, including schema, count, `clearEpoch`, and `clearedAt`; canaries and
+   private paths never appear in extracted diagnostics.
+4. Pi exits cleanly, only the created pane closes, and disposable state is
+   removed after success or failure.
+
+Proven paths: native profile history (schema 3 load, capture rewrite,
+confirmed clear with minted clear epoch, restart reload) and legacy HOME
+history (schema 1 fixture present but shadowed by the populated profile
+target). Legacy migration import itself is covered by unit tests, not this
+smoke.
 
 Only the validated `pi-history:` line is share-safe. Never persist or share raw
 TUI capture: Pi itself may render repository and disposable paths unrelated to

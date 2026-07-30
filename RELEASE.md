@@ -15,17 +15,21 @@ changes; patch bumps are fixes only. The git tag (`vX.Y.Z`) and
 2. Full CI matrix green on the exact merged SHA: Ubuntu + macOS ×
    Node 22.19.0 + 24, audit gate included.
 3. `npm run verify:ci` green locally for the maintainer.
-4. Install smoke in a disposable pi home against the exact SHA:
+4. Install and exercise the exact SHA through the disposable release harness:
 
    ```bash
-   HOME=$(mktemp -d) pi install git:github.com/sagmans/pi-history@<sha>
+   bash scripts/release/disposable-smoke.sh \
+     'git:github.com/sagmans/pi-history@<sha>'
    ```
 
-   Exercise: prompt capture, restart persistence, `/pi-history status`,
-   `/pi-history clear`, `Ctrl+R`, ghost completion or its graceful fallback.
+   Follow the [synthetic maintainer smoke checklist](docs/maintainer-smoke.md)
+   for capture, restart, status, clear, search, and ghost behavior. The harness
+   confines every Pi storage path to one disposable lifecycle; never use real
+   prompt history for a release check.
 5. README accuracy pass: every documented command/path/config key still
    behaves as written; profile-storage changes include disposable default and
-   custom `PI_CODING_AGENT_DIR` coverage.
+   custom `PI_CODING_AGENT_DIR` coverage. Persisted-format changes must agree
+   with [history-format and downgrade behavior](docs/history-format.md).
 6. Changelog roll-forward: `CHANGELOG.md` carries a new dated `[X.Y.Z]`
    section for the target version with the relevant `Unreleased` entries,
    and exactly one `Unreleased` section remains.

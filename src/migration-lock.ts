@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Stats } from "node:fs";
-import { lstat, mkdir, readdir, rmdir, unlink } from "node:fs/promises";
+import { lstat, mkdir, readdir, rmdir, utimes } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { hasErrorCode, isPositiveInteger, isRecord } from "./guards.ts";
+import { LOCK_REMOVAL_CLAIM_DIRECTORY, removeLockDirectoryIf } from "./lock-directory.ts";
 import { readPrivateText, writePrivateFile } from "./migration-safe-files.ts";
 import { PRIVATE_DIR_MODE } from "./project.ts";
 
@@ -13,6 +14,8 @@ const LOCK_OWNER_FILE = "owner.json";
 const LOCK_RETRY_DELAY_MS = 25;
 const OWNERLESS_LOCK_STALE_MS = 30_000;
 const REMOTE_LOCK_STALE_MS = 30_000;
+const HEARTBEAT_INTERVAL_MS = 5_000;
+const HEARTBEAT_STALE_MS = 30_000;
 
 type MigrationLockOwner = {
 	pid: number;
@@ -26,11 +29,24 @@ export async function withMigrationLock<Result>(
 	operation: () => Promise<Result>,
 ): Promise<Result> {
 	const owner = await acquireMigrationLock(lockPath);
+	const heartbeat = startOwnerHeartbeat(path.join(lockPath, LOCK_OWNER_FILE));
 	try {
 		return await operation();
 	} finally {
+		heartbeat.stop();
 		await removeOwnedLock(lockPath, owner.token);
 	}
+}
+
+// A reused PID can fake process existence but cannot refresh this file, so the
+// heartbeat is the portable proof that the original owner is still alive.
+function startOwnerHeartbeat(ownerPath: string): { stop: () => void } {
+	const timer = setInterval(() => {
+		const now = new Date();
+		utimes(ownerPath, now, now).catch(() => {});
+	}, HEARTBEAT_INTERVAL_MS);
+	timer.unref();
+	return { stop: () => clearInterval(timer) };
 }
 
 async function acquireMigrationLock(lockPath: string): Promise<MigrationLockOwner> {
@@ -75,36 +91,36 @@ async function reclaimAbandonedMigrationLock(lockPath: string): Promise<boolean>
 	if (!lockStats.isDirectory()) throw new Error("migration lock is unsafe");
 	const owner = await readMigrationLockOwner(lockPath);
 	if (owner) {
-		if (migrationLockOwnerIsActive(owner)) return false;
-		return removeOwnedLock(lockPath, owner.token);
+		if (await migrationLockOwnerIsActive(lockPath, owner)) return false;
+		return removeLockDirectoryIf(lockPath, async () => {
+			const current = await readMigrationLockOwner(lockPath);
+			return (
+				current?.token === owner.token && !(await migrationLockOwnerIsActive(lockPath, current))
+			);
+		});
 	}
 	if (Date.now() - lockStats.mtimeMs <= OWNERLESS_LOCK_STALE_MS) return false;
-	let entries: string[];
-	try {
-		entries = await readdir(lockPath);
-	} catch (error) {
-		if (hasErrorCode(error, "ENOENT")) return true;
-		throw error;
-	}
-	if (entries.length === 1 && entries[0] === LOCK_OWNER_FILE) {
-		const ownerPath = path.join(lockPath, LOCK_OWNER_FILE);
-		const ownerStats = await lstat(ownerPath).catch(() => undefined);
-		if (!ownerStats?.isFile()) return false;
+	return removeLockDirectoryIf(lockPath, async () => {
 		if (await readMigrationLockOwner(lockPath)) return false;
-		await unlink(ownerPath).catch(() => {});
-	}
-	return rmdir(lockPath)
-		.then(() => true)
-		.catch(() => false);
+		let entries: string[];
+		try {
+			entries = (await readdir(lockPath)).filter((entry) => entry !== LOCK_REMOVAL_CLAIM_DIRECTORY);
+		} catch (error) {
+			if (hasErrorCode(error, "ENOENT")) return false;
+			throw error;
+		}
+		if (entries.length === 0) return true;
+		if (entries.length !== 1 || entries[0] !== LOCK_OWNER_FILE) return false;
+		const ownerStats = await lstat(path.join(lockPath, LOCK_OWNER_FILE)).catch(() => undefined);
+		return ownerStats?.isFile() === true && !(await readMigrationLockOwner(lockPath));
+	});
 }
 
 async function removeOwnedLock(lockPath: string, token: string): Promise<boolean> {
-	const current = await readMigrationLockOwner(lockPath);
-	if (current?.token !== token) return false;
-	await unlink(path.join(lockPath, LOCK_OWNER_FILE)).catch(() => {});
-	return rmdir(lockPath)
-		.then(() => true)
-		.catch(() => false);
+	return removeLockDirectoryIf(lockPath, async () => {
+		const current = await readMigrationLockOwner(lockPath);
+		return current?.token === token;
+	});
 }
 
 async function readMigrationLockOwner(lockPath: string): Promise<MigrationLockOwner | undefined> {
@@ -131,15 +147,22 @@ function normalizeMigrationLockOwner(raw: unknown): MigrationLockOwner | undefin
 	};
 }
 
-function migrationLockOwnerIsActive(owner: MigrationLockOwner): boolean {
+async function migrationLockOwnerIsActive(
+	lockPath: string,
+	owner: MigrationLockOwner,
+): Promise<boolean> {
 	if (owner.host !== hostname()) {
 		const createdAt = Date.parse(owner.createdAt);
 		return Number.isFinite(createdAt) && Date.now() - createdAt <= REMOTE_LOCK_STALE_MS;
 	}
 	try {
 		process.kill(owner.pid, 0);
-		return true;
 	} catch {
 		return false;
 	}
+	// The PID is alive, but that may be an unrelated process after PID reuse;
+	// only a fresh heartbeat proves the original owner still holds the lock.
+	const ownerStats = await lstat(path.join(lockPath, LOCK_OWNER_FILE)).catch(() => undefined);
+	if (!ownerStats) return false;
+	return Date.now() - ownerStats.mtimeMs <= HEARTBEAT_STALE_MS;
 }

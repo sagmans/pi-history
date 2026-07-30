@@ -80,6 +80,7 @@ Full field reference: [`docs/diagnostics.md`](https://github.com/sagmans/pi-hist
 ## Documentation
 
 - [`docs/diagnostics.md`](https://github.com/sagmans/pi-history/blob/main/docs/diagnostics.md) — `/pi-history status` field reference
+- [`docs/history-format.md`](https://github.com/sagmans/pi-history/blob/main/docs/history-format.md) — persisted schema versions, lazy migration, downgrade behavior
 - [`docs/maintainer-development.md`](https://github.com/sagmans/pi-history/blob/main/docs/maintainer-development.md) — maintainer setup, commands, hooks
 - [`docs/maintainer-smoke.md`](https://github.com/sagmans/pi-history/blob/main/docs/maintainer-smoke.md) — disposable Herdr smoke test
 - [`docs/adr/`](https://github.com/sagmans/pi-history/tree/main/docs/adr) — architecture decision records
