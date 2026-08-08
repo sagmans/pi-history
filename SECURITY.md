@@ -45,20 +45,15 @@ permitted.
 ## Dependency advisories
 
 The release audit gate (`npm run audit`) fails on any high or critical
-advisory. Waivers live in `scripts/npm/audit-gate.mjs` and are scoped to one
-advisory URL at one exact install path; the same advisory appearing anywhere
-else still fails the gate.
-
-Currently waived:
-
-- `GHSA-mh99-v99m-4gvg` (`brace-expansion <=5.0.7`, dev-only): the vulnerable
-  version is pinned inside `@earendil-works/pi-coding-agent`'s own published
-  `npm-shrinkwrap.json`, which npm honors over any consumer-side lockfile or
-  override. The package is a development dependency and is never shipped to
-  users, and exploitation requires attacker-controlled glob input reaching
-  minimatch inside Pi's internals. Re-examine on every Pi upgrade (tracked at
-  `earendil-works/pi#5653`); remove the waiver once an upstream release
-  resolves `brace-expansion` to 5.0.8+.
+advisory. No advisories are currently waived:
+`@earendil-works/pi-coding-agent` 0.84.1 resolves every advisory its own
+published `npm-shrinkwrap.json` previously pinned (including the dev-only
+`brace-expansion` advisory formerly tracked at `earendil-works/pi#5653`).
+If a future dependency pins a vulnerable version that npm refuses to
+override consumer-side, a waiver must live in `scripts/npm/audit-gate.mjs`,
+scoped to the exact advisory URLs at the exact install path with a recorded
+rationale, so the same advisory appearing anywhere else still fails the
+gate.
 
 ## Supported versions
 

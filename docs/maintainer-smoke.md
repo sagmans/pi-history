@@ -8,7 +8,7 @@ under `~/.pi/agent`.
 
 - Run inside a Herdr-managed pane with `HERDR_ENV=1`.
 - Install `herdr`, `pi`, Node.js, and the locked project dependencies.
-- The command surface is tested with Herdr `0.7.4`; the script reports the
+- The command surface is tested with Herdr `0.8.0`; the script reports the
   installed version and checks required commands before creating anything.
 
 From the repository root:
@@ -54,7 +54,7 @@ pi-history diagnostics.
 
 - `HERDR_ENV=1 is required`: run the smoke from a Herdr-managed pane.
 - Missing Herdr command: install a compatible Herdr version and compare its
-  reported command surface with tested version `0.7.4`.
+  reported command surface with tested version `0.8.0`.
 - `pi is not available`: install a supported Pi version or add it to `PATH`.
 - Pi readiness timeout: confirm the local TUI can launch with disposable state.
 - Diagnostic mismatch or private-data failure: treat the diagnostic contract as

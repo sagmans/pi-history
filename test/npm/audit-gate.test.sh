@@ -37,8 +37,6 @@ assert_output_contains() {
 	esac
 }
 
-WAIVED_NODE='node_modules/@earendil-works/pi-coding-agent/node_modules/brace-expansion'
-
 vuln_entry() {
 	local name="$1" severity="$2" url="$3" node="$4"
 	cat <<JSON
@@ -55,35 +53,14 @@ test_name='clean report passes'
 write_fixture '{"vulnerabilities": {}}'
 assert_status 0
 
-test_name='only waived advisory passes'
-write_fixture "{\"vulnerabilities\": {$(vuln_entry brace-expansion high 'https://github.com/advisories/GHSA-mh99-v99m-4gvg' "${WAIVED_NODE}")}}"
-assert_status 0
-assert_output_contains '1 waived'
-
-test_name='same advisory at a different path fails'
-write_fixture "{\"vulnerabilities\": {$(vuln_entry brace-expansion high 'https://github.com/advisories/GHSA-mh99-v99m-4gvg' 'node_modules/brace-expansion')}}"
-assert_status 1
-
-test_name='waived advisory without install nodes fails'
-write_fixture '{"vulnerabilities":{"brace-expansion":{"name":"brace-expansion","severity":"high","via":[{"url":"https://github.com/advisories/GHSA-mh99-v99m-4gvg"}]}}}'
-assert_status 1
-
-test_name='waived advisory with empty install nodes fails'
-write_fixture '{"vulnerabilities":{"brace-expansion":{"name":"brace-expansion","severity":"high","via":[{"url":"https://github.com/advisories/GHSA-mh99-v99m-4gvg"}],"nodes":[]}}}'
-assert_status 1
-
-test_name='waived advisory mixed with another install path fails'
-write_fixture "{\"vulnerabilities\":{\"brace-expansion\":{\"name\":\"brace-expansion\",\"severity\":\"high\",\"via\":[{\"url\":\"https://github.com/advisories/GHSA-mh99-v99m-4gvg\"}],\"nodes\":[\"${WAIVED_NODE}\",\"node_modules/brace-expansion\"]}}}"
-assert_status 1
-
-test_name='waived advisory mixed with another object advisory fails'
-write_fixture "{\"vulnerabilities\":{\"brace-expansion\":{\"name\":\"brace-expansion\",\"severity\":\"high\",\"via\":[{\"url\":\"https://github.com/advisories/GHSA-mh99-v99m-4gvg\"},{\"url\":\"https://github.com/advisories/GHSA-other\"}],\"nodes\":[\"${WAIVED_NODE}\"]}}}"
-assert_status 1
-
-test_name='unwaived high advisory fails'
-write_fixture "{\"vulnerabilities\": {$(vuln_entry brace-expansion high 'https://github.com/advisories/GHSA-mh99-v99m-4gvg' "${WAIVED_NODE}"), $(vuln_entry protobufjs high 'https://github.com/advisories/GHSA-j3f2-48v5-ccww' 'node_modules/protobufjs')}}"
+test_name='high advisory fails'
+write_fixture "{\"vulnerabilities\": {$(vuln_entry protobufjs high 'https://github.com/advisories/GHSA-j3f2-48v5-ccww' 'node_modules/protobufjs')}}"
 assert_status 1
 assert_output_contains 'protobufjs'
+
+test_name='high advisory at a nested dependency path fails'
+write_fixture "{\"vulnerabilities\": {$(vuln_entry brace-expansion high 'https://github.com/advisories/GHSA-mh99-v99m-4gvg' 'node_modules/@earendil-works/pi-coding-agent/node_modules/brace-expansion')}}"
+assert_status 1
 
 test_name='critical advisory fails'
 write_fixture "{\"vulnerabilities\": {$(vuln_entry other critical 'https://github.com/advisories/GHSA-xxxx-yyyy-zzzz' 'node_modules/other')}}"
@@ -93,4 +70,4 @@ test_name='moderate advisory passes'
 write_fixture "{\"vulnerabilities\": {$(vuln_entry protobufjs moderate 'https://github.com/advisories/GHSA-j3f2-48v5-ccww' 'node_modules/protobufjs')}}"
 assert_status 0
 
-printf '12 tests, 0 failures\n'
+printf '6 tests, 0 failures\n'
