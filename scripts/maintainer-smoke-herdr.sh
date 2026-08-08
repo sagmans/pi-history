@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly TESTED_HERDR_VERSION="0.7.4"
+readonly TESTED_HERDR_VERSION="0.8.0"
 readonly READY_TIMEOUT_MS="30000"
 readonly STATUS_TIMEOUT_MS="30000"
 readonly PANE_RATIO="0.5"
@@ -28,22 +28,46 @@ readonly SMOKE_CANARY="PI_HISTORY_SMOKE_SECRET_7E4A9C2D"
 readonly LEGACY_SMOKE_CANARY="PI_HISTORY_LEGACY_SECRET_8F5B0D3E"
 readonly CAPTURE_CANARY="PI_HISTORY_SMOKE_CAPTURE_1A2B3C4D"
 readonly STATUS_MARKER_PREFIX="PI_HISTORY_SMOKE_STATUS_"
-readonly SHELL_READY_PREFIX="PI_HISTORY_SMOKE_"
-readonly SHELL_READY_SUFFIX="SHELL_READY_4C6D8E"
+readonly AGENT_NAME="pi-history-smoke"
 readonly FIXTURE_TIMESTAMP="2026-01-01T00:00:00.000Z"
 readonly CAPTURE_POLL_TIMEOUT_S="10"
 readonly RESTART_BOOT_DELAY_S="3"
 
 smoke_root=""
 pane_id=""
+agent=""
 status_sequence=0
 
 cleanup() {
 	local exit_code=$?
 	trap - EXIT INT TERM
+	if [[ -n "$agent" ]]; then
+		herdr agent prompt "$agent" "/quit" >/dev/null 2>&1 || true
+	fi
 	if [[ -n "$pane_id" ]]; then
-		herdr pane run "$pane_id" "/quit" >/dev/null 2>&1 || true
-		herdr pane close "$pane_id" >/dev/null 2>&1 || true
+		# Herdr 0.8.0 has no pane close command; terminating the disposable
+		# shell is what closes the created pane. Only the smoke pane's own
+		# shell PID is targeted.
+		local shell_pid
+		shell_pid="$(
+			herdr pane process-info --pane "$pane_id" 2>/dev/null |
+				node -e '
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => { input += chunk; });
+process.stdin.on("end", () => {
+  const pid = JSON.parse(input)?.result?.process_info?.shell_pid;
+  if (typeof pid === "number" && pid > 0) process.stdout.write(String(pid));
+});
+' 2>/dev/null || true
+		)"
+		if [[ -n "$shell_pid" ]]; then
+			kill "$shell_pid" >/dev/null 2>&1 || true
+			sleep 1
+			if kill -0 "$shell_pid" >/dev/null 2>&1; then
+				kill -9 "$shell_pid" >/dev/null 2>&1 || true
+			fi
+		fi
 	fi
 	if [[ -n "$smoke_root" && -d "$smoke_root" ]]; then
 		rm -rf -- "$smoke_root"
@@ -58,14 +82,14 @@ fail() {
 }
 
 require_command_surface() {
-	local pane_help wait_help
+	local pane_help agent_help
 	pane_help="$(herdr pane 2>&1 || true)"
-	wait_help="$(herdr wait 2>&1 || true)"
-	for command in "pane split" "pane run" "pane read" "pane process-info" "pane send-keys" "pane close"; do
-		[[ "$pane_help" == *"$command"* ]] || fail "Herdr lacks required '$command' command"
+	agent_help="$(herdr agent 2>&1 || true)"
+	for command in "split" "read" "process-info"; do
+		[[ "$pane_help" == *"$command"* ]] || fail "Herdr lacks required 'pane $command' command"
 	done
-	for command in "wait output" "wait agent-status"; do
-		[[ "$wait_help" == *"$command"* ]] || fail "Herdr lacks required '$command' command"
+	for command in "start" "prompt" "read" "send-keys" "wait"; do
+		[[ "$agent_help" == *"$command"* ]] || fail "Herdr lacks required 'agent $command' command"
 	done
 }
 
@@ -78,6 +102,19 @@ process.stdin.on("end", () => {
   const id = JSON.parse(input)?.result?.pane?.pane_id;
   if (typeof id !== "string" || id.length === 0) process.exit(1);
   process.stdout.write(id);
+});
+'
+}
+
+parse_agent_name() {
+	node -e '
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => { input += chunk; });
+process.stdin.on("end", () => {
+  const name = JSON.parse(input)?.result?.agent?.name;
+  if (typeof name !== "string" || name.length === 0) process.exit(1);
+  process.stdout.write(name);
 });
 '
 }
@@ -103,6 +140,38 @@ wait_for_shell() {
 		shell_is_foreground && return 0
 		((SECONDS < deadline)) || return 1
 		sleep 0.2
+	done
+}
+
+read_pane() {
+	herdr pane read "$pane_id" --source recent-unwrapped --lines "$CAPTURE_LINES" --format text
+}
+
+# Herdr 0.8.0 removed 'wait output'; polling the unwrapped snapshot is the
+# equivalent over the remaining read surface.
+wait_for_output() {
+	local match="$1" deadline=$((SECONDS + READY_TIMEOUT_MS / 1000))
+	for ((;;)); do
+		read_pane 2>/dev/null | grep -qF "$match" && return 0
+		((SECONDS < deadline)) || return 1
+		sleep 0.2
+	done
+}
+
+# agent start requires the pane's interactive shell prompt, which may lag the
+# split itself; retry within the readiness budget instead of racing it.
+start_agent() {
+	local name="$1" deadline=$((SECONDS + READY_TIMEOUT_MS / 1000)) start_json
+	for ((;;)); do
+		if start_json="$(
+			herdr agent start "$name" --kind pi --pane "$pane_id" \
+				--timeout "$READY_TIMEOUT_MS" -- --approve --no-session -e . 2>/dev/null
+		)"; then
+			printf '%s' "$start_json" | parse_agent_name
+			return 0
+		fi
+		((SECONDS < deadline)) || return 1
+		sleep 0.5
 	done
 }
 
@@ -140,10 +209,10 @@ expected_diagnostic() {
 
 wait_for_diagnostic() {
 	local expected="$1" marker="$2" deadline=$((SECONDS + STATUS_TIMEOUT_MS / 1000))
-	local pane_json diagnostic
+	local pane_text diagnostic
 	for ((;;)); do
-		pane_json="$(herdr pane read "$pane_id" --source recent-unwrapped --lines "$CAPTURE_LINES" --format text)" || return 1
-		if diagnostic="$(printf '%s' "$pane_json" | extract_diagnostic "$expected" "$marker")"; then
+		pane_text="$(read_pane)" || return 1
+		if diagnostic="$(printf '%s' "$pane_text" | extract_diagnostic "$expected" "$marker")"; then
 			printf '%s' "$diagnostic"
 			return 0
 		fi
@@ -157,10 +226,12 @@ run_status_check() {
 	expected="$(expected_diagnostic "$expected_entries")"
 	((status_sequence += 1))
 	marker="${STATUS_MARKER_PREFIX}${status_sequence}"
-	herdr pane run "$pane_id" "/name $marker" >/dev/null
-	herdr wait output "$pane_id" --match "$marker" --source recent-unwrapped \
-		--timeout "$STATUS_TIMEOUT_MS" >/dev/null || fail "status freshness marker did not appear"
-	herdr pane run "$pane_id" "/pi-history status" >/dev/null
+	herdr agent prompt "$agent" "/name $marker" >/dev/null
+	wait_for_output "$marker" || fail "status freshness marker did not appear"
+	# The TUI still settles the rename after the marker renders; prompting the
+	# status command immediately can interleave with that handling.
+	sleep 1
+	herdr agent prompt "$agent" "/pi-history status" >/dev/null
 	diagnostic="$(wait_for_diagnostic "$expected" "$marker")" ||
 		fail "expected diagnostic for entries=$expected_entries did not appear"
 	[[ "$diagnostic" == "$expected" ]] || fail "diagnostic contract mismatch"
@@ -290,53 +361,44 @@ split_json="$(
 		--env "HOME=$smoke_home" \
 		--env "PI_CODING_AGENT_DIR=$agent_dir" \
 		--env "PI_SKIP_VERSION_CHECK=1" \
-		--env "PI_TELEMETRY=0" \
-		--no-focus
+		--env "PI_TELEMETRY=0"
 )"
 pane_id="$(printf '%s' "$split_json" | parse_pane_id)" || fail "unable to parse created pane ID"
 [[ -n "$pane_id" ]] || fail "Herdr did not return a pane ID"
-herdr wait output "$pane_id" --match "$(basename -- "$repo_root")" --source recent-unwrapped \
-	--timeout "$READY_TIMEOUT_MS" >/dev/null || fail "created shell did not become ready"
 
 pi_version="$($pi_bin --version)"
-printf -v launch_command 'env HOME=%q PI_CODING_AGENT_DIR=%q PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0 %q --approve --no-session -e .' \
-	"$smoke_home" "$agent_dir" "$pi_bin"
-herdr pane run "$pane_id" "$launch_command" >/dev/null
-herdr wait output "$pane_id" --match "pi v$pi_version" --source recent-unwrapped \
-	--timeout "$READY_TIMEOUT_MS" >/dev/null || fail "Pi TUI did not become ready"
+agent="$(start_agent "$AGENT_NAME")" || fail "Pi TUI did not become ready"
+# agent start already proved interactive readiness; the banner match pins the
+# exact launched version on top.
+wait_for_output "pi v$pi_version" || fail "Pi version banner did not appear"
 last_diagnostic=""
 run_status_check "$SMOKE_ENTRIES_SEEDED"
 
 # One synthetic capture: the extension records at submit time, so the agent
 # turn may fail without provider credentials without affecting this proof.
-herdr pane run "$pane_id" "$CAPTURE_CANARY" >/dev/null
+herdr agent prompt "$agent" "$CAPTURE_CANARY" >/dev/null
 wait_for_file_entries "$SMOKE_ENTRIES_AFTER_CAPTURE" || fail "synthetic capture was not persisted"
-herdr pane send-keys "$pane_id" Escape >/dev/null
-herdr wait agent-status "$pane_id" --status idle \
-	--timeout "$STATUS_TIMEOUT_MS" >/dev/null || fail "Pi TUI did not return to command mode"
+herdr agent send-keys "$agent" esc >/dev/null
+herdr agent wait "$agent" --until idle --timeout "$STATUS_TIMEOUT_MS" >/dev/null ||
+	fail "Pi TUI did not return to command mode"
 run_status_check "$SMOKE_ENTRIES_AFTER_CAPTURE"
 check_history_file null "$SMOKE_ENTRIES_AFTER_CAPTURE" || fail "native contract drift after capture"
 
 # Confirmed clear: the dialog is a selector with "Yes" preselected, so a
 # matching selection plus Enter confirms it.
-herdr pane run "$pane_id" "/pi-history clear" >/dev/null
-herdr wait output "$pane_id" --match "Clear pi-history?" --source recent-unwrapped \
-	--timeout "$STATUS_TIMEOUT_MS" >/dev/null || fail "clear confirmation did not appear"
-herdr pane run "$pane_id" "Yes" >/dev/null
-herdr wait output "$pane_id" --match "pi-history cleared" --source recent-unwrapped \
-	--timeout "$STATUS_TIMEOUT_MS" >/dev/null || fail "confirmed clear did not complete"
+herdr agent prompt "$agent" "/pi-history clear" >/dev/null
+wait_for_output "Clear pi-history?" || fail "clear confirmation did not appear"
+herdr agent prompt "$agent" "Yes" >/dev/null
+wait_for_output "pi-history cleared" || fail "confirmed clear did not complete"
 run_status_check "$SMOKE_ENTRIES_AFTER_CLEAR"
 check_history_file minted "$SMOKE_ENTRIES_AFTER_CLEAR" || fail "native contract drift after clear"
 
-# Restart persistence: a fresh TUI must load the cleared native state.
-herdr pane run "$pane_id" "/quit" >/dev/null
+# Restart persistence: a fresh TUI must load the cleared native state. The
+# restart gets a distinct agent name because the first agent record may
+# outlive its pi process.
+herdr agent prompt "$agent" "/quit" >/dev/null
 wait_for_shell || fail "Pi TUI did not exit before restart"
-restart_shell_marker="${SHELL_READY_PREFIX}${SHELL_READY_SUFFIX}"
-printf -v restart_shell_probe 'printf %%s%%s\\n %q %q' "$SHELL_READY_PREFIX" "$SHELL_READY_SUFFIX"
-herdr pane run "$pane_id" "$restart_shell_probe" >/dev/null
-herdr wait output "$pane_id" --match "$restart_shell_marker" --source recent-unwrapped \
-	--timeout "$READY_TIMEOUT_MS" >/dev/null || fail "shell did not become ready after Pi exit"
-herdr pane run "$pane_id" "$launch_command" >/dev/null
+agent="$(start_agent "${AGENT_NAME}-restart")" || fail "Pi TUI did not restart"
 sleep "$RESTART_BOOT_DELAY_S"
 run_status_check "$SMOKE_ENTRIES_AFTER_CLEAR"
 

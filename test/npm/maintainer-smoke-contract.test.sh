@@ -61,9 +61,9 @@ test_smoke_exercises_capture_clear_and_restart() {
 		printf 'smoke lacks the on-disk native contract check\n' >&2
 		return 1
 	}
-	[[ "${restart_section}" == *'herdr pane run "$pane_id" "/quit"'* &&
+	[[ "${restart_section}" == *'herdr agent prompt "$agent" "/quit"'* &&
 		"${restart_section}" == *'wait_for_shell'* &&
-		"${restart_section}" == *'herdr pane run "$pane_id" "$launch_command"'* &&
+		"${restart_section}" == *'start_agent'* &&
 		"${restart_section}" == *'run_status_check "$SMOKE_ENTRIES_AFTER_CLEAR"'* ]] || {
 		printf 'smoke does not exercise a synchronized restart check\n' >&2
 		return 1
