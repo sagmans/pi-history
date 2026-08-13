@@ -39,7 +39,7 @@ The package rename does not move or rewrite configuration or prompt history unde
 | --- | --- |
 | OS | macOS (primary), Linux. Windows unsupported (POSIX permissions, symlinks). |
 | Node.js | `>=22.19.0` (CI tests `22.19.0` and `24`) |
-| pi | `>=0.80.x`, tested at `0.82.1` |
+| pi | `>=0.80.x`, tested at `0.84.1` |
 | Terminal | tested under [herdr](https://github.com/fitchmultz/herdr) and standard macOS terminals |
 | Mode | TUI only. RPC, JSON, and print are inert. |
 

@@ -32,8 +32,9 @@ GitHub. Maintainers with ShellCheck available can additionally run:
 shellcheck -x --shell=bash scripts/npm/*.sh scripts/npm/lib/*.sh test/npm/*.sh
 ```
 
-The audit currently reports moderate `GHSA-j3f2-48v5-ccww` in the dev-only
-`protobufjs` copy nested under pi; reassess it with every pi dependency update.
+The audit currently requires no advisory waivers. Reassess the full report with
+every pi dependency update; any future waiver must follow the exact-path,
+owner-approved policy in [`SECURITY.md`](../SECURITY.md).
 
 Two biome rules are disabled in `biome.json` on purpose (inline comments in
 biome.json silently break rule overrides, so the rationale lives here):
