@@ -1,6 +1,6 @@
 {
 	"name": "@sagmans/pi-history",
-	"version": "0.1.5",
+	"version": "0.1.6",
 	"description": "Ghost completion for prompt history in pi's TUI",
 	"license": "MIT",
 	"files": [
