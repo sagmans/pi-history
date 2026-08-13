@@ -40,6 +40,8 @@ import { testTheme } from "./theme-fixture.ts";
 const PROJECT_ROOT = "/workspace/project";
 const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 const HOME_ENV = "HOME";
+const TEST_EDITOR_WIDTH = 80;
+const NORMAL_EDITOR_INPUT = "x";
 const NON_TUI_MODES = ["rpc", "json", "print"] as const;
 type RuntimeMode = "tui" | (typeof NON_TUI_MODES)[number];
 
@@ -694,16 +696,11 @@ for (const { editorReason, missingMethod, notice } of [
 		missingMethod: "insertTextAtCursor",
 		notice: "wrapped editor cannot accept ghost text",
 	},
-	{
-		editorReason: "missing_render_seam",
-		missingMethod: undefined,
-		notice: "wrapped editor has no safe ghost render seam",
-	},
 ] as const) {
 	test(`${editorReason} reports ghost degradation with information severity`, async () => {
 		const fixture = createRuntimeFixture();
 		fixture.store.entriesSnapshot = [entry("review the diff")];
-		const inner = new RuntimeEditor("review the", editorReason !== "missing_render_seam");
+		const inner = new RuntimeEditor("review the");
 		if (missingMethod) Object.defineProperty(inner, missingMethod, { value: undefined });
 		fixture.context.editorFactory = () => inner;
 		fixture.install();
@@ -731,6 +728,29 @@ test("editor status stays ready until degradation is observed", async () => {
 	await fixture.runCommand("status");
 
 	assert.match(fixture.context.notifications.at(-1)?.message ?? "", /editor=ready/);
+});
+
+test("missing cursor marker stays silent and keeps editor status ready", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.store.entriesSnapshot = [entry("review the diff")];
+	fixture.context.editorFactory = () => new RuntimeEditor("review the", false);
+	fixture.install();
+	await fixture.emitSessionStart();
+
+	const editor = instantiateInstalledEditor(fixture.context);
+	assert.doesNotMatch(editor.render(TEST_EDITOR_WIDTH).join("\n"), /diff/);
+	assert.doesNotMatch(editor.render(TEST_EDITOR_WIDTH).join("\n"), /diff/);
+	await fixture.runCommand("status");
+
+	assert.deepEqual(fixture.context.notifications.at(-1), {
+		message:
+			"pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=1; cap=500; scope=project",
+		type: "info",
+	});
+	assert.doesNotMatch(
+		notificationText(fixture.context),
+		/ghost completion disabled|safe ghost render seam/,
+	);
 });
 
 test("initialization failure outranks and retains unavailable editor detail", async () => {
@@ -779,7 +799,9 @@ test("storage degradation outranks and retains ghost degradation detail", async 
 	const fixture = createRuntimeFixture();
 	fixture.store.entriesSnapshot = [entry("review the diff")];
 	fixture.store.recordError = new Error("private failure at /private/history");
-	fixture.context.editorFactory = () => new RuntimeEditor("review the", false);
+	const inner = new RuntimeEditor("");
+	Object.defineProperty(inner, "getCursor", { value: undefined });
+	fixture.context.editorFactory = () => inner;
 	fixture.install();
 	await fixture.emitSessionStart();
 	instantiateInstalledEditor(fixture.context).render(80);
@@ -790,10 +812,45 @@ test("storage degradation outranks and retains ghost degradation detail", async 
 	const status = fixture.context.notifications.at(-1);
 	assert.deepEqual(status, {
 		message:
-			"pi-history: diagnosticsVersion=2; state=storage_degraded; initialization=ready; storage=degraded; storageReason=record_failed; editor=degraded; editorReason=missing_render_seam; cap=500; scope=project",
+			"pi-history: diagnosticsVersion=2; state=storage_degraded; initialization=ready; storage=degraded; storageReason=record_failed; editor=degraded; editorReason=missing_cursor; cap=500; scope=project",
 		type: "warning",
 	});
 	assert.doesNotMatch(status?.message ?? "", /private prompt|private failure|\/private/);
+});
+
+test("ghost composes with a compatible wrapper installed before pi-history", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.store.entriesSnapshot = [entry("review the diff")];
+	const base = new RuntimeEditor("review the");
+	fixture.context.editorFactory = () => new CompatiblePassthroughEditor(base);
+	fixture.install();
+	await fixture.emitSessionStart();
+
+	const editor = instantiateInstalledEditor(fixture.context);
+	assert.match(editor.render(TEST_EDITOR_WIDTH).join("\n"), /diff/);
+	editor.handleInput(NORMAL_EDITOR_INPUT);
+	assert.deepEqual(base.handled, [NORMAL_EDITOR_INPUT]);
+});
+
+test("ghost composes with a compatible wrapper installed after pi-history", async () => {
+	const fixture = createRuntimeFixture();
+	fixture.store.entriesSnapshot = [entry("review the diff")];
+	const base = new RuntimeEditor("review the");
+	fixture.context.editorFactory = () => base;
+	fixture.install();
+	await fixture.emitSessionStart();
+
+	const piHistoryFactory = fixture.context.editorFactory;
+	assert.ok(piHistoryFactory, "pi-history factory should be installed");
+	fixture.context.editorFactory = (tui, theme, keybindings) =>
+		new CompatiblePassthroughEditor(
+			piHistoryFactory(tui, theme, keybindings) as WrappedHistoryEditor,
+		);
+
+	const editor = instantiateInstalledEditor(fixture.context);
+	assert.match(editor.render(TEST_EDITOR_WIDTH).join("\n"), /diff/);
+	editor.handleInput(NORMAL_EDITOR_INPUT);
+	assert.deepEqual(base.handled, [NORMAL_EDITOR_INPUT]);
 });
 
 test("unknown command keeps bounded usage behavior", async () => {
@@ -1063,6 +1120,48 @@ class RuntimeEditor implements WrappedHistoryEditor {
 		const lines = this.getLines();
 		const line = lines.length - 1;
 		return { line, col: lines[line]?.length ?? 0 };
+	}
+}
+
+class CompatiblePassthroughEditor implements WrappedHistoryEditor {
+	focused = false;
+	onSubmit?: (text: string) => void;
+	onChange?: (text: string) => void;
+	disableSubmit = false;
+	borderColor?: (text: string) => string;
+
+	constructor(private readonly inner: WrappedHistoryEditor) {}
+
+	render(width: number): string[] {
+		return this.inner.render(width);
+	}
+
+	handleInput(data: string): void {
+		this.inner.handleInput(data);
+	}
+
+	invalidate(): void {
+		this.inner.invalidate();
+	}
+
+	getText(): string {
+		return this.inner.getText();
+	}
+
+	setText(text: string): void {
+		this.inner.setText(text);
+	}
+
+	insertTextAtCursor(text: string): void {
+		this.inner.insertTextAtCursor?.(text);
+	}
+
+	getLines(): string[] {
+		return this.inner.getLines?.() ?? this.inner.getText().split("\n");
+	}
+
+	getCursor(): { line: number; col: number } {
+		return this.inner.getCursor?.() ?? { line: 0, col: this.inner.getText().length };
 	}
 }
 

@@ -11,6 +11,10 @@ All notable changes to this project are documented here. This format follows
 - Raised Pi development dependencies to 0.84.1, Biome to 2.5.7, and `@types/node` to 24.13.3 (matching the Node 24 LTS development runtime); upstream 0.84.1 resolves every shrinkwrap-pinned advisory, so the release audit gate now fails on any high or critical advisory with no waivers.
 - Ported the maintainer Herdr smoke to the Herdr 0.8.0 command surface: Pi now launches through `agent start`, prompts and slash commands go through `agent prompt`, output assertions poll `pane read` after `wait output` was removed, and teardown closes the created pane by terminating its disposable shell.
 
+### Fixed
+
+- Prevented one wrapped-editor redraw without Pi's private cursor marker from permanently disabling ghost completion; pi-history now leaves that redraw unchanged and retries on the next render, while structural editor safeguards and `Ctrl+R` remain unchanged. (#52)
+
 ## [0.1.5] - 2026-07-30
 
 ### Changed
