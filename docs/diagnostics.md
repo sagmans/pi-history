@@ -55,11 +55,25 @@ keeping `Ctrl+R` available:
 - `missing_lines`
 - `missing_cursor`
 - `missing_insertion`
-- `missing_render_seam`
 
-Priority follows that list when multiple capabilities are missing. Editor
-readiness means no degradation has been observed; status does not probe the
-editor.
+These three reasons are structural: a wrapped editor that lacks `getLines`,
+`getCursor`, or `insertTextAtCursor` permanently disables ghost for that
+wrapper instance and emits one notice, while `Ctrl+R` stays available. Priority
+follows the list order when multiple capabilities are missing. A
+wrapped-editor redraw that carries a suggestion but not Pi's private cursor
+marker is not structural degradation: pi-history leaves that redraw unchanged,
+emits no marker warning, and retries ghost placement on the next render. Such
+a frame does not change `editor=ready`. Editor readiness means no degradation
+has been observed; status does not probe the editor.
+
+Version 2 retains `missing_render_seam` in the field vocabulary for
+compatibility with earlier version-2 builds and the contract tests, but current
+pi-history does not produce it from a missing cursor marker. The marker is an
+internal Pi render detail, not a stable SDK contract. Ghost completion composes
+with a compatible pass-through wrapper installed before or after pi-history
+through Pi's documented factory composition; pi-history cannot guarantee
+visible ghost text through a wrapper that rewrites the private cursor marker,
+rendered output, or input handling.
 
 Top-level state precedence is `initialization_failed`, `write_blocked`,
 `storage_degraded`, `editor_degraded`, then `healthy`. Combined conditions keep
