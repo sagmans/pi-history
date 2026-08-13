@@ -13,6 +13,7 @@ import { HistoryEditor, type WrappedHistoryEditor } from "../src/history-editor.
 import type { HistoryEntry } from "../src/history-store.ts";
 import { testTheme } from "./theme-fixture.ts";
 
+const TEST_EDITOR_WIDTH = 80;
 const CTRL_E = "\x05";
 const CTRL_R = "\x12";
 const CTRL_X = "\x18";
@@ -217,7 +218,7 @@ test("multiple missing ghost capabilities use fixed primary priority", () => {
 	assert.deepEqual(reasons, ["missing_lines"]);
 });
 
-test("missing ghost render seam disables ghost and keeps Ctrl+R usable", () => {
+test("missing cursor marker leaves renders unchanged and keeps Ctrl+R usable", () => {
 	const notifications: string[] = [];
 	const inner = new SeamlessInner("review the");
 	const editor = createHistoryEditor({
@@ -226,14 +227,30 @@ test("missing ghost render seam disables ghost and keeps Ctrl+R usable", () => {
 		onGhostUnavailable: (reason) => notifications.push(reason),
 	});
 
-	assert.doesNotMatch(editor.render(80).join("\n"), /diff/);
-	editor.handleInput(CTRL_E);
+	assert.doesNotMatch(editor.render(TEST_EDITOR_WIDTH).join("\n"), /diff/);
+	assert.doesNotMatch(editor.render(TEST_EDITOR_WIDTH).join("\n"), /diff/);
+	assert.deepEqual(notifications, []);
+
 	editor.handleInput(CTRL_R);
 	editor.handleInput(ENTER);
-
-	assert.deepEqual(notifications, ["missing_render_seam"]);
-	assert.deepEqual(inner.handled, [CTRL_E]);
 	assert.equal(inner.text, "review the diff");
+});
+
+test("missing cursor marker affects only that render", () => {
+	const reasons: string[] = [];
+	const inner = new FlickerInner("review the");
+	const editor = createHistoryEditor({
+		inner,
+		entries: [entry("review the diff")],
+		onGhostUnavailable: (reason) => reasons.push(reason),
+	});
+
+	assert.match(editor.render(TEST_EDITOR_WIDTH).join("\n"), /diff/);
+	inner.cursorMarkerVisible = false;
+	assert.doesNotMatch(editor.render(TEST_EDITOR_WIDTH).join("\n"), /diff/);
+	inner.cursorMarkerVisible = true;
+	assert.match(editor.render(TEST_EDITOR_WIDTH).join("\n"), /diff/);
+	assert.deepEqual(reasons, []);
 });
 
 test("Ctrl+R with empty history shows No history yet message", () => {
@@ -533,6 +550,15 @@ class BorderInner extends FakeInner {
 class SeamlessInner extends FakeInner {
 	render(width: number): string[] {
 		return [this.text.padEnd(width, " ")];
+	}
+}
+
+class FlickerInner extends FakeInner {
+	cursorMarkerVisible = true;
+
+	render(width: number): string[] {
+		const cursor = this.cursorMarkerVisible ? CURSOR_RENDER : "";
+		return [`${this.text}${cursor}`.padEnd(width, " ")];
 	}
 }
 

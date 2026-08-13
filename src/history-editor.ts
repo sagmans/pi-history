@@ -346,10 +346,7 @@ export class HistoryEditor extends CustomEditor {
 		lines: string[],
 	): { index: number; line: string; cursorStart: number } | undefined {
 		const index = lines.findIndex((line) => line.includes(CURSOR_AT_END_RENDER));
-		if (index < 0) {
-			this.disableGhost("missing_render_seam");
-			return undefined;
-		}
+		if (index < 0) return undefined;
 		const line = lines[index];
 		return line
 			? {
