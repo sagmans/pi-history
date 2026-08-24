@@ -3,6 +3,7 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	renameSync,
 	rmSync,
 	statSync,
 	utimesSync,
@@ -158,10 +159,10 @@ test("migration reclaimers preserve a claimed stale owner", async () => {
 				token: "restored-stale-owner",
 			});
 		}
-		rmSync(path.join(lockPath, LOCK_REMOVAL_CLAIM_DIRECTORY), {
-			force: true,
-			recursive: true,
-		});
+		const claimPath = path.join(lockPath, LOCK_REMOVAL_CLAIM_DIRECTORY);
+		// Moving the fixture-owned claim atomically keeps teardown from deleting a
+		// contender claim created immediately after release.
+		renameSync(claimPath, path.join(path.dirname(lockPath), LOCK_REMOVAL_CLAIM_DIRECTORY));
 		await Promise.all(contenders);
 
 		assert.equal(enteredWhileClaimed, 0);
