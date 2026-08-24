@@ -6,6 +6,10 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Raised Pi development dependencies to 0.84.2 and Biome to 2.5.8 so maintainer pins match the operator runtime and Dependabot's split lockfile updates cannot leave two `pi-tui` versions.
+
 ## [0.1.6] - 2026-08-13
 
 ### Changed
