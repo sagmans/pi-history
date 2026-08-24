@@ -292,6 +292,7 @@ command -v herdr >/dev/null 2>&1 || fail "herdr is not available"
 command -v node >/dev/null 2>&1 || fail "node is not available"
 pi_bin="$(command -v pi || true)"
 [[ -n "$pi_bin" ]] || fail "pi is not available"
+pi_bin_dir="$(dirname -- "$pi_bin")"
 require_command_surface
 herdr pane current --current >/dev/null || fail "current Herdr pane is unavailable"
 herdr_version="$(herdr --version)"
@@ -359,6 +360,7 @@ chmod "$PRIVATE_FILE_MODE" "$legacy_history_dir/config.json" "$legacy_history_di
 split_json="$(
 	herdr pane split --current --direction right --ratio "$PANE_RATIO" --cwd "$repo_root" \
 		--env "HOME=$smoke_home" \
+		--env "PATH=$pi_bin_dir:$PATH" \
 		--env "PI_CODING_AGENT_DIR=$agent_dir" \
 		--env "PI_SKIP_VERSION_CHECK=1" \
 		--env "PI_TELEMETRY=0"
