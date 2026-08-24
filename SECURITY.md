@@ -46,7 +46,7 @@ permitted.
 
 The release audit gate (`npm run audit`) fails on any high or critical
 advisory. No advisories are currently waived:
-`@earendil-works/pi-coding-agent` 0.84.2 resolves every advisory its own
+`@earendil-works/pi-coding-agent` 0.84.3 resolves every advisory its own
 published `npm-shrinkwrap.json` previously pinned (including the dev-only
 `brace-expansion` advisory formerly tracked at `earendil-works/pi#5653`).
 If a future dependency pins a vulnerable version that npm refuses to

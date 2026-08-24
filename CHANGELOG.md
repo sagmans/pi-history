@@ -8,7 +8,11 @@ All notable changes to this project are documented here. This format follows
 
 ### Changed
 
-- Raised Pi development dependencies to 0.84.2 and Biome to 2.5.8 so maintainer pins match the operator runtime and Dependabot's split lockfile updates cannot leave two `pi-tui` versions.
+- Raised Pi development dependencies to 0.84.3 and Biome to 2.5.8 so maintainer pins match the operator runtime, with direct and Pi-owned `pi-tui` dependencies on the same version.
+
+### Fixed
+
+- Made the Herdr maintainer smoke launch the same detected Pi binary whose version it asserts, so an older parent Herdr `PATH` cannot invalidate dependency dogfood.
 
 ## [0.1.6] - 2026-08-13
 
