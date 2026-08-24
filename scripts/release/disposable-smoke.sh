@@ -8,6 +8,7 @@ readonly HOME_DIR_NAME='home'
 readonly AGENT_DIR_NAME='agent'
 readonly SESSION_DIR_NAME='sessions'
 readonly NO_SESSION_FLAG='--no-session'
+readonly QUIT_COMMAND='/quit'
 readonly EXIT_INTERRUPT='130'
 readonly EXIT_TERMINATE='143'
 readonly PRIVATE_UMASK='077'
@@ -53,11 +54,11 @@ mkdir -p -- "${HOME}" "${PI_CODING_AGENT_DIR}" "${PI_CODING_AGENT_SESSION_DIR}"
 pi install "${candidate_spec}"
 
 printf '%s\n' \
-	'Disposable Pi launch 1/2: capture synthetic prompts, verify completion, then /exit.' \
+	"Disposable Pi launch 1/2: capture synthetic prompts, verify completion, then ${QUIT_COMMAND}." \
 	'Never enter real prompts or copy history from another profile.'
 pi "${NO_SESSION_FLAG}"
 
 printf '%s\n' \
 	'Disposable Pi launch 2/2: verify restart persistence and /pi-history status,' \
-	'then run /pi-history clear, Ctrl+R, ghost completion or its graceful fallback, and /exit.'
+	"then run /pi-history clear, Ctrl+R, ghost completion or its graceful fallback, and ${QUIT_COMMAND}."
 pi "${NO_SESSION_FLAG}"

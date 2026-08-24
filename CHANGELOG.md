@@ -16,6 +16,7 @@ All notable changes to this project are documented here. This format follows
 
 - Made the Herdr maintainer smoke launch the same detected Pi binary whose version it asserts, so an older parent Herdr `PATH` cannot invalidate dependency dogfood.
 - Made lock-directory removal atomically detach the validated lock before cleanup, preventing a waiting writer from recreating the claim path during recursive removal.
+- Corrected disposable release-smoke guidance to use Pi's supported `/quit` command.
 
 ## [0.1.6] - 2026-08-13
 

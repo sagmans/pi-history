@@ -158,6 +158,15 @@ assert_failure_cleanup() {
 	assert_hostile_profiles_untouched
 }
 
+test_guidance_uses_supported_quit_command() {
+	prepare_hostile_profiles
+	run_release_smoke
+	assert_success || return 1
+	assert_contains "${OUTPUT}" 'then /quit.' || return 1
+	assert_contains "${OUTPUT}" 'and /quit.' || return 1
+	assert_not_contains "${OUTPUT}" '/exit'
+}
+
 test_install_failure_cleans_only_disposable_root() {
 	assert_failure_cleanup install-failure 19 1
 }
@@ -171,6 +180,7 @@ test_interruption_cleans_only_disposable_root() {
 }
 
 run_test 'release smoke isolates install and runtime under one disposable root' test_success_isolates_full_lifecycle
+run_test 'release smoke uses supported quit command' test_guidance_uses_supported_quit_command
 run_test 'release smoke cleans disposable state after install failure' test_install_failure_cleans_only_disposable_root
 run_test 'release smoke cleans disposable state after runtime failure' test_runtime_failure_cleans_only_disposable_root
 run_test 'release smoke cleans disposable state after interruption' test_interruption_cleans_only_disposable_root
