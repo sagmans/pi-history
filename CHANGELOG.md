@@ -6,6 +6,8 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-08-24
+
 ### Changed
 
 - Raised Pi development dependencies to 0.84.3 and Biome to 2.5.8 so maintainer pins match the operator runtime, with direct and Pi-owned `pi-tui` dependencies on the same version.
@@ -98,7 +100,8 @@ All notable changes to this project are documented here. This format follows
 - `/pi-history status` (metadata only) and `/pi-history clear` (confirmed wipe with a clear marker so older open sessions cannot restore entries).
 - Graceful fallback when ghost completion editor support is unavailable; `Ctrl+R` remains available.
 
-[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/sagmans/pi-history/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/sagmans/pi-history/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/sagmans/pi-history/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/sagmans/pi-history/compare/v0.1.3...v0.1.4
