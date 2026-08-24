@@ -10,6 +10,8 @@ readonly STORE_SOURCE="${REPO_ROOT}/src/history-store.ts"
 readonly HEALTHY_DIAGNOSTIC='pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=ready; editor=ready; entries=0; cap=42; scope=global'
 readonly WRAPPED_HEALTHY_DIAGNOSTIC="${HEALTHY_DIAGNOSTIC/storage=ready/$'storage=r\neady'}"
 readonly DIAGNOSTIC_SUFFIX_CANARY='PRIVATE_SUFFIX_CANARY'
+readonly PI_BIN_DIR_ASSIGNMENT="pi_bin_dir=\"\$(dirname -- \"\$pi_bin\")\""
+readonly PI_PATH_ENV="--env \"PATH=\$pi_bin_dir:\$PATH\""
 
 smoke_constant() {
 	local name="$1"
@@ -70,6 +72,15 @@ test_smoke_exercises_capture_clear_and_restart() {
 	}
 }
 
+test_smoke_launches_detected_pi_binary() {
+	local script
+	script="$(cat "${SMOKE_SCRIPT}")"
+	[[ "${script}" == *"${PI_BIN_DIR_ASSIGNMENT}"* && "${script}" == *"${PI_PATH_ENV}"* ]] || {
+		printf 'smoke does not pin the spawned pane to the detected Pi binary\n' >&2
+		return 1
+	}
+}
+
 test_diagnostic_extraction_enforces_contract_boundary() {
 	eval "$(sed -n '/^extract_diagnostic() {$/,/^}$/p' "${SMOKE_SCRIPT}")"
 	local extracted
@@ -106,5 +117,6 @@ test_native_fixture_matches_runtime_schema
 test_native_fixture_carries_clear_lineage_metadata
 test_legacy_fixture_is_explicitly_legacy_schema
 test_smoke_exercises_capture_clear_and_restart
+test_smoke_launches_detected_pi_binary
 test_diagnostic_extraction_enforces_contract_boundary
-printf '5 tests passed\n'
+printf '6 tests passed\n'
