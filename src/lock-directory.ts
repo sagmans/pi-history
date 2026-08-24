@@ -1,10 +1,14 @@
-import { lstat, mkdir, rm, rmdir } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { lstat, mkdir, rename, rm, rmdir } from "node:fs/promises";
 import path from "node:path";
 
 import { hasErrorCode } from "./guards.ts";
 import { PRIVATE_DIR_MODE } from "./project.ts";
 
 export const LOCK_REMOVAL_CLAIM_DIRECTORY = ".removal-claim";
+
+const LOCK_REMOVAL_PATH_MARKER = ".removing-";
+const LOCK_IDENTITY_CHANGED_MESSAGE = "lock identity changed during removal";
 
 type DirectoryIdentity = Readonly<{ device: number; inode: number }>;
 
@@ -28,7 +32,19 @@ export async function removeLockDirectoryIf(
 	try {
 		if (!identity || !(await validate())) return false;
 		if (!(await directoryMatches(lockPath, identity))) return false;
-		await rm(lockPath, { recursive: true });
+		const removalPath = `${lockPath}${LOCK_REMOVAL_PATH_MARKER}${randomUUID()}`;
+		try {
+			// Detaching the validated inode first prevents a waiter from adding a new
+			// claim while recursive cleanup is between child removal and rmdir.
+			await rename(lockPath, removalPath);
+		} catch (error) {
+			if (hasErrorCode(error, "ENOENT")) return true;
+			throw error;
+		}
+		if (!(await directoryMatches(removalPath, identity))) {
+			throw new Error(LOCK_IDENTITY_CHANGED_MESSAGE);
+		}
+		await rm(removalPath, { recursive: true });
 		return true;
 	} finally {
 		// A different inode is a successor. Never address its claim path.
