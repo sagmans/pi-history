@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest new or changed behavior in pi-history
+title: "feat: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reporting a feature request does not guarantee evaluation or implementation.
+        Report security vulnerabilities privately through the [security policy](https://github.com/sagmans/pi-history/security/policy).
+        Never include real prompt contents, credentials, private paths, or other sensitive data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: Describe the user need that the request addresses.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Requested behavior
+      description: Describe the smallest behavior change that meets the need.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+      description: Describe current workarounds or alternatives that you considered.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed real prompt contents, credentials, private paths, and other sensitive data.
+          required: true

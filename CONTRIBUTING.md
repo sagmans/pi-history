@@ -1,8 +1,9 @@
 # Participation policy
 
-This project accepts public bug reports only. External pull requests, feature
-requests, support requests, and implementation proposals are not accepted.
-Unsolicited pull requests will be closed.
+This project accepts public bug reports and feature requests. Reporting a feature
+request does not guarantee evaluation or implementation. External pull requests,
+support requests, and implementation proposals are not accepted. Unsolicited pull
+requests will be closed.
 
 ## Report a bug
 
@@ -15,8 +16,17 @@ and include:
 - expected and actual behavior,
 - synthetic or redacted diagnostic evidence.
 
-Search existing issues before filing. Never include prompt contents, credentials,
-private paths, or other sensitive data.
+## Request a feature
+
+Use the repository's [feature request form](https://github.com/sagmans/pi-history/issues/new?template=feature_request.yml)
+and include:
+
+- the problem or use case,
+- the requested behavior,
+- current workarounds or alternatives.
+
+Search existing issues before filing a bug report or feature request. Never include
+prompt contents, credentials, private paths, or other sensitive data.
 
 ## Security reports
 

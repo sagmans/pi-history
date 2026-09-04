@@ -1,7 +1,8 @@
 # Maintainer development
 
-Owner-authorized maintenance. Public bug reports are welcome; external pull
-requests and feature requests are not accepted — see the
+Owner-authorized maintenance. Public bug reports and feature requests can be filed.
+Feature requests do not guarantee evaluation or implementation. External pull
+requests and support requests are not accepted. See the
 [participation policy](https://github.com/sagmans/pi-history/blob/main/CONTRIBUTING.md).
 For behaviour and install, see [`README.md`](../README.md).
 
