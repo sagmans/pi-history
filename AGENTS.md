@@ -1,7 +1,8 @@
 # Repository agent guidance
 
-This repository accepts bug reports only. External pull requests and feature
-requests are unsupported; read the [participation policy](CONTRIBUTING.md).
+This repository accepts bug reports and feature requests. Feature requests do not
+guarantee evaluation or implementation. External pull requests are unsupported;
+read the [participation policy](CONTRIBUTING.md).
 
 ## Maintainer paths
 
