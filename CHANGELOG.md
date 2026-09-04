@@ -6,6 +6,10 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Accepted public feature requests without guaranteeing evaluation or implementation, and added a dedicated issue form.
+
 ## [0.1.7] - 2026-08-24
 
 ### Changed
