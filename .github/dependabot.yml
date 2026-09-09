@@ -10,3 +10,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # pi-coding-agent depends on pi-tui, and this repo also depends on it
+      # directly. Separate proposals resolve two pi-tui copies, so typecheck
+      # sees two distinct TUI types and fails; one group keeps them in lockstep.
+      pi:
+        patterns:
+          - "@earendil-works/*"
