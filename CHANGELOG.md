@@ -8,6 +8,7 @@ All notable changes to this project are documented here. This format follows
 
 ### Changed
 
+- Grouped Dependabot's Pi dependency proposals so `pi-coding-agent` and `pi-tui` are always raised together, keeping one resolved `pi-tui` copy and therefore one TUI type identity for typecheck.
 - Raised Pi development dependencies to 0.85.1, Biome to 2.5.12, and the dev-only `@types/node` typings to 26.5.0, keeping the direct and Pi-owned `pi-tui` pins on one version so typecheck resolves a single TUI type identity (typecheck-only; Node runtime support stays `22.19.0` and `24`).
 - Accepted public feature requests without guaranteeing evaluation or implementation, and added a dedicated issue form.
 
