@@ -27,6 +27,15 @@ readonly GLOBAL_SCOPE_KEY="<global>"
 readonly SMOKE_CANARY="PI_HISTORY_SMOKE_SECRET_7E4A9C2D"
 readonly LEGACY_SMOKE_CANARY="PI_HISTORY_LEGACY_SECRET_8F5B0D3E"
 readonly CAPTURE_CANARY="PI_HISTORY_SMOKE_CAPTURE_1A2B3C4D"
+# Reverse search is fuzzy, so the query is a subsequence of the captured canary
+# rather than a substring; the ghost prefix is a strict prefix of the seeded
+# canary and of nothing else stored, which keeps the expected match unambiguous.
+readonly SEARCH_QUERY="smoke capture"
+readonly GHOST_PREFIX="${SMOKE_CANARY:0:20}"
+readonly SMOKE_USE_COUNT_AFTER_SEARCH="2"
+readonly KEY_SETTLE_S="1"
+readonly ABSENCE_SETTLE_S="2"
+readonly EDITOR_TAIL_LINES="8"
 readonly STATUS_MARKER_PREFIX="PI_HISTORY_SMOKE_STATUS_"
 readonly AGENT_NAME="pi-history-smoke"
 readonly FIXTURE_TIMESTAMP="2026-01-01T00:00:00.000Z"
@@ -85,7 +94,7 @@ require_command_surface() {
 	local pane_help agent_help
 	pane_help="$(herdr pane 2>&1 || true)"
 	agent_help="$(herdr agent 2>&1 || true)"
-	for command in "split" "read" "process-info"; do
+	for command in "split" "read" "process-info" "send-text"; do
 		[[ "$pane_help" == *"$command"* ]] || fail "Herdr lacks required 'pane $command' command"
 	done
 	for command in "start" "prompt" "read" "send-keys" "wait"; do
@@ -265,6 +274,32 @@ wait_for_file_entries() {
 	done
 }
 
+entry_use_count() {
+	node -e '
+const fs = require("node:fs");
+const [file, text] = process.argv.slice(1);
+try {
+  const data = JSON.parse(fs.readFileSync(file, "utf8"));
+  const entry = (Array.isArray(data.entries) ? data.entries : []).find((candidate) => candidate.text === text);
+  process.stdout.write(String(entry ? entry.useCount : -1));
+} catch {
+  process.stdout.write("-1");
+}
+' "$history_dir/global.json" "$1"
+}
+
+# A selection that reaches the draft and is submitted reuses the stored entry,
+# so its use count is what distinguishes a real selection from a no-op.
+wait_for_entry_use_count() {
+	local text="$1" expected_count="$2"
+	local deadline=$((SECONDS + CAPTURE_POLL_TIMEOUT_S))
+	for ((;;)); do
+		[[ "$(entry_use_count "$text")" == "$expected_count" ]] && return 0
+		((SECONDS < deadline)) || return 1
+		sleep 0.2
+	done
+}
+
 # On-disk contract check: fails whenever the native schema version or the
 # required clear-lineage fields drift from the runtime that wrote the file.
 check_history_file() {
@@ -386,6 +421,36 @@ herdr agent wait "$agent" --until idle --timeout "$STATUS_TIMEOUT_MS" >/dev/null
 run_status_check "$SMOKE_ENTRIES_AFTER_CAPTURE"
 check_history_file null "$SMOKE_ENTRIES_AFTER_CAPTURE" || fail "native contract drift after capture"
 
+# Reverse search: a fuzzy query must surface the captured entry, and choosing it
+# must put exactly that stored text in the draft. Submitting the selection is the
+# proof: deduplication then keeps the count and raises the stored use count, while
+# a draft still holding the query would have added a second entry.
+herdr agent send-keys "$agent" ctrl+r >/dev/null
+herdr pane send-text "$pane_id" "$SEARCH_QUERY"
+wait_for_output "$CAPTURE_CANARY" || fail "reverse search did not match the captured entry"
+herdr agent send-keys "$agent" enter >/dev/null
+sleep "$KEY_SETTLE_S"
+herdr agent send-keys "$agent" enter >/dev/null
+wait_for_file_entries "$SMOKE_ENTRIES_AFTER_CAPTURE" ||
+	fail "reverse search selection added a stored entry"
+wait_for_entry_use_count "$CAPTURE_CANARY" "$SMOKE_USE_COUNT_AFTER_SEARCH" ||
+	fail "reverse search selection never reached the stored entry"
+herdr agent send-keys "$agent" esc >/dev/null
+herdr agent wait "$agent" --until idle --timeout "$STATUS_TIMEOUT_MS" >/dev/null ||
+	fail "Pi TUI did not return to command mode after reverse search"
+run_status_check "$SMOKE_ENTRIES_AFTER_CAPTURE"
+
+# Ghost completion: a stored prefix must render the matching entry, and accepting
+# it must fill the draft without submitting, so the stored history is unchanged.
+# The draft is then discarded rather than submitted to keep later counts exact.
+herdr pane send-text "$pane_id" "$GHOST_PREFIX"
+wait_for_output "$SMOKE_CANARY" || fail "ghost completion did not render the stored entry"
+herdr agent send-keys "$agent" ctrl+e >/dev/null
+sleep "$KEY_SETTLE_S"
+herdr agent send-keys "$agent" ctrl+c >/dev/null
+wait_for_file_entries "$SMOKE_ENTRIES_AFTER_CAPTURE" ||
+	fail "ghost acceptance changed the stored history"
+
 # Confirmed clear: the dialog is a selector with "Yes" preselected, so a
 # matching selection plus Enter confirms it.
 herdr agent prompt "$agent" "/pi-history clear" >/dev/null
@@ -394,6 +459,17 @@ herdr agent prompt "$agent" "Yes" >/dev/null
 wait_for_output "pi-history cleared" || fail "confirmed clear did not complete"
 run_status_check "$SMOKE_ENTRIES_AFTER_CLEAR"
 check_history_file minted "$SMOKE_ENTRIES_AFTER_CLEAR" || fail "native contract drift after clear"
+
+# Cleared history must stop offering completions, so the same prefix may only
+# echo what was typed. The check is bounded to the trailing editor frame because
+# the suggestion rendered before the clear is still in the pane scrollback.
+herdr pane send-text "$pane_id" "$GHOST_PREFIX"
+sleep "$ABSENCE_SETTLE_S"
+if read_pane | tail -n "$EDITOR_TAIL_LINES" | grep -qF "$SMOKE_CANARY"; then
+	fail "ghost completion still renders after a confirmed clear"
+fi
+herdr agent send-keys "$agent" ctrl+c >/dev/null
+sleep "$KEY_SETTLE_S"
 
 # Restart persistence: a fresh TUI must load the cleared native state. The
 # restart gets a distinct agent name because the first agent record may
