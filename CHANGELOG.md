@@ -15,6 +15,7 @@ All notable changes to this project are documented here. This format follows
 
 ### Fixed
 
+- Stopped two migration-lock tests from failing a healthy reclaim on a loaded runner: the bounds that prove a reclaim finished without test intervention were tight enough to lose that race against parallel test files, so they now separate a completed reclaim from a hang.
 - Stopped the migration-lock heartbeat test from failing a healthy lock implementation on a slow runner: it now waits for the heartbeat refresh it asserts instead of reading the owner file once after a fixed delay.
 
 ## [0.1.7] - 2026-08-24
