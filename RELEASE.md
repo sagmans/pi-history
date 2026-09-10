@@ -15,17 +15,28 @@ changes; patch bumps are fixes only. The git tag (`vX.Y.Z`) and
 2. Full CI matrix green on the exact merged SHA: Ubuntu + macOS ×
    Node 22.19.0 + 24, audit gate included.
 3. `npm run verify:ci` green locally for the maintainer.
-4. Install and exercise the exact SHA through the disposable release harness:
+4. Complete both disposable smoke checks against the exact merged SHA:
 
-   ```bash
-   bash scripts/release/disposable-smoke.sh \
-     'git:github.com/sagmans/pi-history@<sha>'
-   ```
+   - From a clean checkout of that SHA, run `npm run smoke:herdr` with the
+     [maintainer smoke prerequisites](docs/maintainer-smoke.md#preconditions).
+     Require the `pi-history Herdr smoke passed:` result. This automates
+     capture, status, `Ctrl+R` selection, `Ctrl+E` ghost acceptance,
+     confirmed clear, ghost absence after clear, and restart reload.
+     `npm run verify:ci` does not run this smoke.
+   - Install that SHA through the disposable release harness in an interactive
+     terminal:
 
-   Follow the [synthetic maintainer smoke checklist](docs/maintainer-smoke.md)
-   for capture, restart, status, clear, search, and ghost behavior. The harness
-   confines every Pi storage path to one disposable lifecycle; never use real
-   prompt history for a release check.
+     ```bash
+     bash scripts/release/disposable-smoke.sh \
+       'git:github.com/sagmans/pi-history@<sha>'
+     ```
+
+   Complete both Pi launches with synthetic prompts and `/quit`. Check capture,
+   completion, restart persistence, status, and confirmed clear as prompted.
+   The install harness remains interactive: exit code 0 alone is not runtime
+   evidence. The Herdr smoke covers the search and ghost keypress checks, but
+   loads the checkout rather than the installed package. Neither check replaces
+   the other. Never use real prompt history or share raw TUI captures.
 5. README accuracy pass: every documented command/path/config key still
    behaves as written; profile-storage changes include disposable default and
    custom `PI_CODING_AGENT_DIR` coverage. Persisted-format changes must agree
