@@ -6,6 +6,8 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-09-10
+
 ### Changed
 
 - Extended the grouped Dependabot Pi proposals to security updates, so an advisory fix for only one of the two Pi packages cannot split them and break typecheck.
@@ -115,7 +117,8 @@ All notable changes to this project are documented here. This format follows
 - `/pi-history status` (metadata only) and `/pi-history clear` (confirmed wipe with a clear marker so older open sessions cannot restore entries).
 - Graceful fallback when ghost completion editor support is unavailable; `Ctrl+R` remains available.
 
-[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/sagmans/pi-history/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/sagmans/pi-history/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/sagmans/pi-history/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/sagmans/pi-history/compare/v0.1.4...v0.1.5
