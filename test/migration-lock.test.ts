@@ -186,8 +186,7 @@ test("withMigrationLock heartbeat keeps a genuine live owner protected", async (
 		await waitFor(() => existsSync(ownerPath));
 
 		context.mock.timers.tick(HEARTBEAT_STALE_MS + HEARTBEAT_INTERVAL_MS);
-		await delay(10);
-		assert.equal(statSync(ownerPath).mtimeMs, Date.now());
+		await waitForHeartbeatRefresh(ownerPath, (ms) => context.mock.timers.tick(ms));
 
 		let entered = false;
 		const contender = withMigrationLock(lockPath, async () => {
@@ -225,6 +224,24 @@ async function waitFor(condition: () => boolean): Promise<void> {
 		await delay(10);
 	}
 	throw new Error("condition not met in time");
+}
+
+// Acquisition resolves only once the owner file write settles, and the heartbeat
+// then refreshes that file through an unawaited utimes, so a single tick can run
+// before the interval exists or before its write lands. Advance the mocked clock
+// until a refresh is observable; the clock stays past the stale window either way.
+async function waitForHeartbeatRefresh(
+	ownerPath: string,
+	tick: (milliseconds: number) => void,
+): Promise<void> {
+	let expected = Number.NaN;
+	for (let attempts = 0; attempts < 100; attempts += 1) {
+		if (statSync(ownerPath).mtimeMs === expected) return;
+		tick(HEARTBEAT_INTERVAL_MS);
+		expected = Date.now();
+		await delay(10);
+	}
+	throw new Error("heartbeat never refreshed the owner file");
 }
 
 async function withFixture(testBody: (lockPath: string) => Promise<void>): Promise<void> {
