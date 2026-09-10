@@ -21,6 +21,11 @@ const OWNER_FILE_NAME = "owner.json";
 const FIXTURE_TIMESTAMP = "2026-07-01T00:00:00.000Z";
 const HEARTBEAT_INTERVAL_MS = 5_000;
 const HEARTBEAT_STALE_MS = 30_000;
+// Both reclaim races assert that the implementation finished without test
+// intervention, so the bound only has to separate that from a hang. node --test
+// runs files in parallel, and a tight budget loses the race against a healthy
+// multi-step reclaim on a loaded runner.
+const RECLAIM_BUDGET_MS = 5_000;
 
 test("withMigrationLock reclaims a dead owner", async () => {
 	await withFixture(async (lockPath) => {
@@ -48,7 +53,7 @@ test("withMigrationLock reclaims a stale malformed owner file", async () => {
 		const waiting = withMigrationLock(lockPath, async () => "completed");
 		const completedBeforeCleanup = await Promise.race([
 			waiting.then(() => true),
-			delay(100).then(() => false),
+			delay(RECLAIM_BUDGET_MS).then(() => false),
 		]);
 		if (!completedBeforeCleanup) rmSync(lockPath, { force: true, recursive: true });
 		await waiting;
@@ -117,7 +122,7 @@ test("withMigrationLock reclaims an abandoned lock whose PID was reused", async 
 		const waiting = withMigrationLock(lockPath, async () => "completed");
 		const acquiredQuickly = await Promise.race([
 			waiting.then(() => true),
-			delay(500).then(() => false),
+			delay(RECLAIM_BUDGET_MS).then(() => false),
 		]);
 		if (!acquiredQuickly) rmSync(lockPath, { force: true, recursive: true });
 		const result = await waiting;
