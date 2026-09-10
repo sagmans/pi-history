@@ -23,7 +23,7 @@ infrastructure, not a package-user or CI dependency.
 
 ## Isolation and evidence
 
-The script proves four obligations:
+The script proves five obligations:
 
 1. All Pi state is disposable. Canonical native history and conflicting legacy
    history use distinct synthetic canaries; Pi runs in a non-focused sibling
@@ -37,11 +37,17 @@ pi-history: diagnosticsVersion=2; state=healthy; initialization=ready; storage=r
 3. Synthetic capture, confirmed clear, and restart agree in diagnostics and on
    disk, including schema, count, `clearEpoch`, and `clearedAt`; canaries and
    private paths never appear in extracted diagnostics.
-4. Pi exits cleanly, only the created pane closes, and disposable state is
+4. Reverse search puts the captured entry into the draft, proved by
+   deduplication: the stored count holds while that entry's use count rises.
+   Ghost completion renders the seeded entry for a stored prefix and accepts it
+   without submitting, and the same prefix renders nothing after a confirmed
+   clear.
+5. Pi exits cleanly, only the created pane closes, and disposable state is
    removed after success or failure.
 
 Proven paths: native profile history (schema 3 load, capture rewrite,
-confirmed clear with minted clear epoch, restart reload) and legacy HOME
+reverse-search selection, ghost render and acceptance, ghost absence after
+clear, confirmed clear with minted clear epoch, restart reload) and legacy HOME
 history (schema 1 fixture present but shadowed by the populated profile
 target). Legacy migration import itself is covered by unit tests, not this
 smoke.
@@ -59,3 +65,5 @@ pi-history diagnostics.
 - Pi readiness timeout: confirm the local TUI can launch with disposable state.
 - Diagnostic mismatch or private-data failure: treat the diagnostic contract as
   failed; do not share captured pane output.
+- Reverse-search, ghost, or ghost-absence failure: treat the search contract as
+  failed; the messages name the step, and raw pane output stays private.

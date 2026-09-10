@@ -72,6 +72,29 @@ test_smoke_exercises_capture_clear_and_restart() {
 	}
 }
 
+test_smoke_exercises_search_and_ghost() {
+	local script absence_section
+	script="$(cat "${SMOKE_SCRIPT}")"
+	[[ "${script}" == *'"send-text"'* &&
+		"${script}" == *'ctrl+r'* &&
+		"${script}" == *'wait_for_entry_use_count "$CAPTURE_CANARY" "$SMOKE_USE_COUNT_AFTER_SEARCH"'* ]] || {
+		printf 'smoke does not prove a reverse-search selection reached the draft\n' >&2
+		return 1
+	}
+	[[ "${script}" == *'ctrl+e'* &&
+		"${script}" == *'wait_for_output "$SMOKE_CANARY"'* &&
+		"${script}" == *'GHOST_PREFIX'* ]] || {
+		printf 'smoke does not exercise ghost completion\n' >&2
+		return 1
+	}
+	absence_section="$(sed -n '/^# Cleared history must stop offering completions/,/^# Restart persistence:/p' "${SMOKE_SCRIPT}")"
+	[[ "${absence_section}" == *'grep -qF "$SMOKE_CANARY"'* &&
+		"${absence_section}" == *'still renders after a confirmed clear'* ]] || {
+		printf 'smoke does not assert ghost absence after a confirmed clear\n' >&2
+		return 1
+	}
+}
+
 test_smoke_launches_detected_pi_binary() {
 	local script
 	script="$(cat "${SMOKE_SCRIPT}")"
@@ -117,6 +140,7 @@ test_native_fixture_matches_runtime_schema
 test_native_fixture_carries_clear_lineage_metadata
 test_legacy_fixture_is_explicitly_legacy_schema
 test_smoke_exercises_capture_clear_and_restart
+test_smoke_exercises_search_and_ghost
 test_smoke_launches_detected_pi_binary
 test_diagnostic_extraction_enforces_contract_boundary
-printf '6 tests passed\n'
+printf '7 tests passed\n'
