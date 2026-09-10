@@ -8,6 +8,9 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule:
+      # Dependabot holds version updates for a default three-day cooldown after
+      # publication, so a grouped proposal can lag this weekly schedule without
+      # the group being broken.
       interval: weekly
     open-pull-requests-limit: 5
     groups:
@@ -15,5 +18,12 @@ updates:
       # directly. Separate proposals resolve two pi-tui copies, so typecheck
       # sees two distinct TUI types and fails; one group keeps them in lockstep.
       pi:
+        patterns:
+          - "@earendil-works/*"
+      # A group applies to version updates only unless it says otherwise, so an
+      # advisory fix for one Pi package would split the pair again and fail
+      # typecheck the same way.
+      pi-security:
+        applies-to: security-updates
         patterns:
           - "@earendil-works/*"
