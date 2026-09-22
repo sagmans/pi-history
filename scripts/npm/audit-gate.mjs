@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-// Release audit gate: fails on any high/critical advisory. No waivers exist:
-// @earendil-works/pi-coding-agent 0.85.1 resolved every advisory its own
-// published npm-shrinkwrap.json previously pinned consumer-side-unfixable.
-// If a future dependency reintroduces such a pin, any waiver must be scoped
+// No advisory waivers exist. If a dependency pins a vulnerable version that
+// cannot be overridden consumer-side, any waiver must be scoped
 // to the exact advisory URLs and install path so a second occurrence of the
 // same advisory elsewhere still fails the gate.
 import { readFileSync } from "node:fs";

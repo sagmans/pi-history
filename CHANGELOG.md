@@ -8,6 +8,7 @@ All notable changes to this project are documented here. This format follows
 
 ### Changed
 
+- Raised both Pi development dependencies to 0.87.0 and the dev-only `@types/node` typings to 26.6.2. Verified the dependency audit, maintainer checks, and isolated TUI smoke on Pi 0.87.0. Node runtime support is unchanged.
 - Clarified the release smoke gate: automated Herdr checks cover search and ghost keypresses, while the exact-SHA package install still requires interactive evidence.
 
 ## [0.1.8] - 2026-09-10
