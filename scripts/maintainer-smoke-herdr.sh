@@ -398,7 +398,8 @@ split_json="$(
 		--env "PATH=$pi_bin_dir:$PATH" \
 		--env "PI_CODING_AGENT_DIR=$agent_dir" \
 		--env "PI_SKIP_VERSION_CHECK=1" \
-		--env "PI_TELEMETRY=0"
+		--env "PI_TELEMETRY=0" \
+		--no-focus
 )"
 pane_id="$(printf '%s' "$split_json" | parse_pane_id)" || fail "unable to parse created pane ID"
 [[ -n "$pane_id" ]] || fail "Herdr did not return a pane ID"
