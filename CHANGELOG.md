@@ -6,6 +6,14 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-09-30
+
+### Compatibility
+
+- Add an independent Pi 0.99.1 CI check while preserving the locked baseline.
+- Keep focus in the caller's pane during the isolated runtime smoke check.
+- Verify history capture, search, completion, clear, and restart on Pi 0.99.1.
+
 ### Changed
 
 - Raised both Pi development dependencies to 0.87.0 and the dev-only `@types/node` typings to 26.6.2. Verified the dependency audit, maintainer checks, and isolated TUI smoke on Pi 0.87.0. Node runtime support is unchanged.
@@ -122,7 +130,8 @@ All notable changes to this project are documented here. This format follows
 - `/pi-history status` (metadata only) and `/pi-history clear` (confirmed wipe with a clear marker so older open sessions cannot restore entries).
 - Graceful fallback when ghost completion editor support is unavailable; `Ctrl+R` remains available.
 
-[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/sagmans/pi-history/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/sagmans/pi-history/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/sagmans/pi-history/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/sagmans/pi-history/compare/v0.1.5...v0.1.6

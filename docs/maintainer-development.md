@@ -1,5 +1,8 @@
 # Maintainer development
 
+CI also runs typecheck and tests against Pi 0.99.1 in a separate job.
+The locked baseline remains unchanged so older supported hosts retain coverage.
+
 Owner-authorized maintenance. Public bug reports and feature requests can be filed.
 Feature requests do not guarantee evaluation or implementation. External pull
 requests and support requests are not accepted. See the
