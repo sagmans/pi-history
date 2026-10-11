@@ -1,6 +1,6 @@
 # Maintainer development
 
-CI also runs typecheck and tests against Pi 0.99.1 in a separate job.
+CI also runs typecheck and tests against Pi 1.1.0 in a separate job.
 The locked baseline remains unchanged so older supported hosts retain coverage.
 
 Owner-authorized maintenance. Public bug reports and feature requests can be filed.

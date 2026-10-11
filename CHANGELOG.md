@@ -6,6 +6,10 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+### Compatibility
+
+- Support Pi 1.x: the independent CI compatibility check now runs against Pi 1.1.0 instead of 0.99.1, alongside the locked 0.87.0 baseline. No source change was needed: the Pi 1.0 to 1.1 changelog has no breaking change to the extension, editor, or TUI APIs this extension uses.
+
 ### Changed
 
 - Update maintainer tooling to Biome 2.5.15 and `@types/node` 26.6.4.
