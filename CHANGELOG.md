@@ -6,6 +6,10 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Update maintainer tooling to Biome 2.5.15 and `@types/node` 26.6.4.
+
 ## [0.1.9] - 2026-09-30
 
 ### Compatibility
