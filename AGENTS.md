@@ -24,3 +24,7 @@ read the [participation policy](CONTRIBUTING.md).
 Never read, copy, log, or mutate real prompt history or `~/.pi/agent`. Runtime
 checks must use the disposable `HOME` and `PI_CODING_AGENT_DIR` environment from
 the maintainer smoke test. Use synthetic, redacted test data only.
+
+## Git hooks
+
+Checks run in `.githooks/`, not in push/PR CI. Run `scripts/setup-hooks` after cloning. All checks must pass before you push. Never use `--no-verify`. `pre-push`: `npm run verify:ci` (audit, Biome, typecheck, tests), then the Pi 1.1.0 compatibility check, installed with `npm ci --ignore-scripts` from the committed `compat/pi-1.1.0` lockfile (resolved with min-release-age=3).

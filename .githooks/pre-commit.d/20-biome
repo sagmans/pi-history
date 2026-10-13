@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs Biome on the staged files (their working-tree copies).
+set -eu
+
+# Helpers (staged_git, pushed_shas, at_sha, darwin_only) from .githooks/lib.
+# shellcheck source=/dev/null
+. "${HOOK_HELPERS:?run from .githooks (scripts/setup-hooks)}"
+
+files=$(staged_git diff --cached --name-only --diff-filter=ACMR -z | tr '\0' '\n') || exit 1
+[ -n "$files" ] || exit 0
+printf '%s\n' "$files" | tr '\n' '\0' |
+	xargs -0 npx --no-install biome check --no-errors-on-unmatched --files-ignore-unknown=true

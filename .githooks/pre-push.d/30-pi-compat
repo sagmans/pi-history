@@ -1,0 +1,74 @@
+#!/bin/sh
+# Re-runs typecheck and tests against each supported Pi host release, the job
+# hosted CI used to run, on each pushed commit. Each version installs with
+# `npm ci --ignore-scripts` from its own committed lockfile
+# (compat/pi-<version>/, resolved under npm min-release-age=3) into its own
+# directory. This always runs in a temporary worktree of the pushed commit,
+# so the clone's own node_modules is never removed or replaced.
+# Regenerate a lockfile: copy package.json into compat/pi-<v>/, pin the
+# @earendil-works packages to <v>, then run
+#   npm install --package-lock-only --ignore-scripts --min-release-age=3
+set -eu
+PI_COMPAT_VERSIONS='1.1.0'
+PI_SCOPE='@earendil-works/'
+
+# Runs in the temporary worktree. Called with set -e off (inside `if`), so
+# every step returns on failure.
+compat_checks() {
+	for v in $PI_COMPAT_VERSIONS; do
+		echo "pre-push: Pi $v compatibility" >&2
+		lock="compat/pi-$v"
+		# The compat manifest must match package.json except the Pi pins;
+		# otherwise its lockfile tests a stale dependency set.
+		node -e '
+const fs = require("node:fs");
+const scope = process.argv[2];
+const strip = (p) => {
+	const m = JSON.parse(fs.readFileSync(p, "utf8"));
+	for (const k of ["dependencies", "devDependencies", "peerDependencies"])
+		for (const n of Object.keys(m[k] ?? {})) if (n.startsWith(scope)) delete m[k][n];
+	return JSON.stringify(m);
+};
+if (strip("package.json") !== strip(process.argv[1] + "/package.json")) {
+	console.error(`pre-push: ${process.argv[1]}/package.json is stale; regenerate it (see 30-pi-compat)`);
+	process.exit(1);
+}' "$lock" "$PI_SCOPE" || return 1
+		deps=".pi-compat-$v"
+		mkdir "$deps" || return 1
+		cp "$lock/package.json" "$lock/package-lock.json" "$deps/" || return 1
+		(cd "$deps" && npm ci --ignore-scripts --no-audit --no-fund >/dev/null) || return 1
+		# A fresh worktree has no node_modules; link this version's set in.
+		ln -s "$deps/node_modules" node_modules || return 1
+		npm run --silent typecheck || return 1
+		npm test --silent || return 1
+		rm -f node_modules || return 1
+	done
+}
+
+# One commit in its own temporary worktree, removed afterwards.
+compat_at() {
+	c_tmp=$(mktemp -d "${TMPDIR:-/tmp}/pi-compat.XXXXXX") || return 1
+	if ! git worktree add -q --detach "$c_tmp/wt" "$1"; then
+		rmdir "$c_tmp"
+		return 1
+	fi
+	c_rc=0
+	(cd "$c_tmp/wt" && compat_checks) || c_rc=$?
+	git worktree remove --force "$c_tmp/wt" >/dev/null 2>&1 || true
+	# Only the mktemp directory created above.
+	case "$c_tmp" in
+	*/pi-compat.*) rm -rf -- "$c_tmp" ;;
+	esac
+	return "$c_rc"
+}
+
+# shellcheck source=/dev/null
+. "${HOOK_HELPERS:?run from .githooks (scripts/setup-hooks)}"
+shas=$(pushed_shas <"$HOOK_STDIN_FILE") || exit 1
+for c_sha in $shas; do
+	echo "pre-push: $(basename -- "$0"): checking $c_sha" >&2
+	if ! compat_at "$c_sha"; then
+		echo "pre-push: $(basename -- "$0"): Pi compatibility failed for $c_sha" >&2
+		exit 1
+	fi
+done
