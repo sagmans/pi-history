@@ -4,8 +4,9 @@
 # reviewed lockfile and the working tree's node_modules untouched.
 set -eu
 PI_COMPAT_VERSIONS='1.1.0'
-# Packages the hosted compatibility job pinned to the host release.
-PI_PACKAGES='pi-coding-agent pi-tui'
+# The sibling packages ship in lockstep with the host; pinning only some of
+# them lets the rest drift to a newer release and breaks the check.
+PI_PACKAGES='pi-coding-agent pi-tui pi-codemode pi-ai pi-agent-core pi-mcp chord'
 PI_SCOPE='@earendil-works'
 top=$(git rev-parse --show-toplevel)
 work=$(mktemp -d "${TMPDIR:-/tmp}/pi-history-compat.XXXXXX")
@@ -18,7 +19,7 @@ for v in $PI_COMPAT_VERSIONS; do
 	specs=''
 	for p in $PI_PACKAGES; do specs="$specs $PI_SCOPE/$p@$v"; done
 	# shellcheck disable=SC2086 # one argument per package spec
-	npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund $specs >/dev/null
+	npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund $specs >/dev/null || exit 1
 	npm run --silent typecheck
-	npm test --silent >/dev/null
+	npm test --silent
 done
