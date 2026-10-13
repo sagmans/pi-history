@@ -73,6 +73,15 @@ if [ -n "$global_dir" ] && [ -f "$global_dir/$hook_name" ] && [ -x "$global_dir/
 	run_one "$global_dir/$hook_name" "$@"
 fi
 
+# Git exports repository-local variables (GIT_DIR, GIT_INDEX_FILE, ...) to
+# hooks. Test suites below that run `git init` or `git config` in a temp
+# fixture would otherwise act on this repository and could rewrite its local
+# config, including core.hooksPath, which silently disables the global guards.
+# The global hook above already ran with Git's environment intact. Git lists
+# the exact set itself, so this never goes stale.
+# shellcheck disable=SC2046 # one variable name per word is intended
+unset $(git rev-parse --local-env-vars)
+
 project_dir="$hooks_dir/$hook_name$PROJECT_HOOK_SUFFIX"
 if [ -d "$project_dir" ]; then
 	# Lexical order gives a numeric prefix (10-, 20-) control over sequencing.
