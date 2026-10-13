@@ -1,0 +1,42 @@
+#!/bin/sh
+# Runs `npm run verify:ci` (audit, Biome, typecheck, tests) on each pushed commit.
+set -eu
+
+checks() {
+	npm run verify:ci || return 1
+}
+
+# Helpers (staged_git, pushed_shas, at_sha, darwin_only) from .githooks/lib.
+# shellcheck source=/dev/null
+. "${HOOK_HELPERS:?run from .githooks (scripts/setup-hooks)}"
+
+top=$(git rev-parse --show-toplevel)
+# A temporary worktree has no dependencies: install them from that commit's
+# lockfile (never resolved; npm skips lifecycle scripts, pnpm runs only the
+# builds allowed in pnpm-workspace.yaml). In place, the clone's install is used.
+install_deps() {
+	[ "$(pwd -P)" != "$(CDPATH='' cd -- "$top" && pwd -P)" ] || return 0
+	if [ -f pnpm-lock.yaml ]; then
+		pnpm install --frozen-lockfile >/dev/null || return 1
+	elif [ -f package-lock.json ]; then
+		npm ci --ignore-scripts --no-audit --no-fund >/dev/null || return 1
+	fi
+}
+
+# at_sha runs this with set -e off, so every step returns on failure.
+run_at() {
+	install_deps || return 1
+	checks || return 1
+}
+
+# Each pushed commit is tested as pushed: in place when it is a clean HEAD,
+# otherwise in a temporary worktree. A for loop, never `| while`, so a failure
+# blocks the push.
+shas=$(pushed_shas <"$HOOK_STDIN_FILE") || exit 1
+for pp_commit in $shas; do
+	echo "pre-push: $(basename -- "$0"): checking $pp_commit" >&2
+	if ! at_sha "$pp_commit" run_at; then
+		echo "pre-push: $(basename -- "$0"): checks failed for $pp_commit" >&2
+		exit 1
+	fi
+done

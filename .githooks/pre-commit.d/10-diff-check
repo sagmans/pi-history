@@ -1,0 +1,10 @@
+#!/bin/sh
+# Rejects whitespace errors (trailing spaces, conflict markers, ...) in the
+# staged content. Honors `git -c core.whitespace=...`.
+set -eu
+
+# Helpers (staged_git, pushed_shas, at_sha, darwin_only) from .githooks/lib.
+# shellcheck source=/dev/null
+. "${HOOK_HELPERS:?run from .githooks (scripts/setup-hooks)}"
+
+staged_git diff --cached --check

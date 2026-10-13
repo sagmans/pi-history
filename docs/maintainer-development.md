@@ -1,6 +1,6 @@
 # Maintainer development
 
-CI also runs typecheck and tests against Pi 1.1.0 in a separate job.
+The `pre-push` hook also runs typecheck and tests against Pi 1.1.0 in a throwaway copy.
 The locked baseline remains unchanged so older supported hosts retain coverage.
 
 Owner-authorized maintenance. Public bug reports and feature requests can be filed.
@@ -48,12 +48,9 @@ biome.json silently break rule overrides, so the rationale lives here):
 - `suspicious/noControlCharactersInRegex` — the display sanitizer exists
   precisely to match C0/C1 control characters.
 
-Git hooks via husky: pre-commit runs `npm run check`, pre-push runs
-`npm run typecheck && npm test`. Hooks are dev-only: there is deliberately no
-`prepare` script, because pi runs `npm install` inside its package clones and
-hooks must never install on user machines. Maintainers opt in once after
-cloning:
-
-```bash
-npx husky
-```
+Git hooks live in `.githooks/`: pre-commit runs Biome on the staged files, pre-push runs
+`npm run verify:ci` and the Pi compatibility check on each pushed commit. Each hook runs the generic checks first.
+Hooks are dev-only: there is deliberately no `prepare` script, because pi runs
+`npm install` inside its package clones and hooks must never install on user
+machines. Maintainers run `scripts/setup-hooks` once per clone,
+which sets the clone's `core.hooksPath` to `.githooks`.
