@@ -38,3 +38,16 @@ Do not report vulnerabilities publicly. Follow the private process in
 Fork the repository and maintain the fork for features, integrations, or policy
 changes outside this project's scope. The maintainer cannot provide design,
 implementation, review, release, or support services for forks.
+
+## Git hooks
+
+Checks run in tracked local Git hooks instead of push/PR CI. Enable them once per clone:
+
+```sh
+sh scripts/setup-hooks.sh
+```
+
+Each hook runs your global Git hook of the same name first (if any), then this repository's checks:
+
+- `pre-commit`: staged whitespace and conflict-marker check. Then `npm run check` (Biome).
+- `pre-push`: `npm run verify:ci` (audit, Biome, typecheck, tests).

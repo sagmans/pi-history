@@ -1,0 +1,5 @@
+#!/bin/sh
+# Runs audit, lint, typecheck and tests that hosted CI ran on every push, so a regression never reaches main. The release workflow repeats them before publish.
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+npm run verify:ci

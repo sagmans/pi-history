@@ -1,0 +1,24 @@
+#!/bin/sh
+# Re-runs typecheck and tests against the Pi 1.1.0 host release, the
+# job hosted CI used to run on every push. A throwaway export keeps the
+# reviewed lockfile and the working tree's node_modules untouched.
+set -eu
+PI_COMPAT_VERSIONS='1.1.0'
+# Packages the hosted compatibility job pinned to the host release.
+PI_PACKAGES='pi-coding-agent pi-tui'
+PI_SCOPE='@earendil-works'
+top=$(git rev-parse --show-toplevel)
+work=$(mktemp -d "${TMPDIR:-/tmp}/pi-history-compat.XXXXXX")
+trap 'rm -rf "$work"' EXIT HUP INT TERM
+git -C "$top" archive HEAD | tar -x -C "$work"
+cd "$work"
+npm ci --ignore-scripts --no-audit --no-fund >/dev/null
+for v in $PI_COMPAT_VERSIONS; do
+	echo "pre-push: Pi $v compatibility" >&2
+	specs=''
+	for p in $PI_PACKAGES; do specs="$specs $PI_SCOPE/$p@$v"; done
+	# shellcheck disable=SC2086 # one argument per package spec
+	npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund $specs >/dev/null
+	npm run --silent typecheck
+	npm test --silent >/dev/null
+done

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Runs the formatter and linter before each commit, as the old husky hook did, so style issues never enter history.
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+npm run check

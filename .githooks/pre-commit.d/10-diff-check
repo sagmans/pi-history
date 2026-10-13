@@ -1,0 +1,5 @@
+#!/bin/sh
+# Rejects whitespace errors and leftover conflict markers in staged changes,
+# which used to surface only in review. Staged-only so the commit stays fast.
+set -eu
+git diff --cached --check
