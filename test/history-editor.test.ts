@@ -486,10 +486,13 @@ class FakeInner implements WrappedHistoryEditor {
 	disableSubmit = false;
 	borderColor?: (text: string) => string;
 
-	constructor(
-		public text: string,
-		private cursorOverride?: { line: number; col: number },
-	) {}
+	public text: string;
+	private cursorOverride: { line: number; col: number } | undefined;
+
+	constructor(text: string, cursorOverride?: { line: number; col: number }) {
+		this.text = text;
+		this.cursorOverride = cursorOverride;
+	}
 
 	render(width: number): string[] {
 		const line = `${this.text}${CURSOR_RENDER}`;

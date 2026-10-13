@@ -982,10 +982,13 @@ class FakeStore implements PiHistoryStore {
 	clearBlockReason: Exclude<HistoryBlockReason, "corrupt_history"> | undefined;
 	clearCount = 0;
 
-	constructor(
-		readonly historyFilePath: string,
-		readonly projectRoot: string = PROJECT_ROOT,
-	) {}
+	readonly historyFilePath: string;
+	readonly projectRoot: string;
+
+	constructor(historyFilePath: string, projectRoot: string = PROJECT_ROOT) {
+		this.historyFilePath = historyFilePath;
+		this.projectRoot = projectRoot;
+	}
 
 	get entries(): readonly HistoryEntry[] {
 		return this.entriesSnapshot.length > 0 ? this.entriesSnapshot : this.recorded.map(entry);
@@ -1047,10 +1050,12 @@ class FakeContext implements PiHistoryContext {
 	hasUI: boolean;
 	uiAccessCount = 0;
 
-	constructor(
-		private readonly confirmResult: boolean,
-		readonly mode: RuntimeMode,
-	) {
+	private readonly confirmResult: boolean;
+	readonly mode: RuntimeMode;
+
+	constructor(confirmResult: boolean, mode: RuntimeMode) {
+		this.confirmResult = confirmResult;
+		this.mode = mode;
 		this.hasUI = mode === "tui" || mode === "rpc";
 	}
 
@@ -1084,10 +1089,13 @@ class RuntimeEditor implements WrappedHistoryEditor {
 	disableSubmit = false;
 	borderColor?: (text: string) => string;
 
-	constructor(
-		private text: string,
-		private readonly renderCursor = true,
-	) {}
+	private text: string;
+	private readonly renderCursor;
+
+	constructor(text: string, renderCursor = true) {
+		this.text = text;
+		this.renderCursor = renderCursor;
+	}
 
 	render(width: number): string[] {
 		const cursor = this.renderCursor ? "\x1b[7m \x1b[0m" : "";
@@ -1130,7 +1138,11 @@ class CompatiblePassthroughEditor implements WrappedHistoryEditor {
 	disableSubmit = false;
 	borderColor?: (text: string) => string;
 
-	constructor(private readonly inner: WrappedHistoryEditor) {}
+	private readonly inner: WrappedHistoryEditor;
+
+	constructor(inner: WrappedHistoryEditor) {
+		this.inner = inner;
+	}
 
 	render(width: number): string[] {
 		return this.inner.render(width);

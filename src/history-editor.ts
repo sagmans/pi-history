@@ -98,14 +98,23 @@ export class HistoryEditor extends CustomEditor {
 	private ghostUnavailableNotified = false;
 	private readonly editorTheme: EditorTheme;
 
+	private readonly appTui: TUI;
+	private readonly keybindingsManager: KeybindingsManager;
+	private readonly inner: WrappedHistoryEditor;
+	private readonly options: HistoryEditorOptions;
+
 	constructor(
-		private readonly appTui: TUI,
+		appTui: TUI,
 		theme: EditorTheme,
-		private readonly keybindingsManager: KeybindingsManager,
-		private readonly inner: WrappedHistoryEditor,
-		private readonly options: HistoryEditorOptions,
+		keybindingsManager: KeybindingsManager,
+		inner: WrappedHistoryEditor,
+		options: HistoryEditorOptions,
 	) {
 		super(appTui, theme, keybindingsManager);
+		this.appTui = appTui;
+		this.keybindingsManager = keybindingsManager;
+		this.inner = inner;
+		this.options = options;
 		this.editorTheme = theme;
 		const missingReason = missingGhostMethodReason(inner);
 		if (missingReason) this.disableGhost(missingReason);

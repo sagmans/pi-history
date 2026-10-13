@@ -8,10 +8,14 @@ import { hasErrorCode, isPositiveInteger, isRecord } from "./guards.ts";
 
 export const DEFAULT_MAX_ENTRIES = 500;
 
-export enum IsolationLevel {
-	Project = "project",
-	Global = "global",
-}
+// A const object plus a union type instead of an enum: Node's native type
+// stripping cannot erase enums, and callers keep the same IsolationLevel.X
+// spelling and string values.
+export const IsolationLevel = {
+	Project: "project",
+	Global: "global",
+} as const;
+export type IsolationLevel = (typeof IsolationLevel)[keyof typeof IsolationLevel];
 
 const ISOLATION_LEVELS = [IsolationLevel.Project, IsolationLevel.Global] as const;
 
