@@ -9,7 +9,7 @@ requests and support requests are not accepted. See the
 [participation policy](https://github.com/sagmans/pi-history/blob/main/CONTRIBUTING.md).
 For behaviour and install, see [`README.md`](../README.md).
 
-Requires Node.js >= 22.19.0 (tests use `node --experimental-transform-types`).
+Requires Node.js >= 22.19.0 (tests use native type stripping; `erasableSyntaxOnly` keeps the sources strippable).
 
 ```bash
 npm ci --ignore-scripts

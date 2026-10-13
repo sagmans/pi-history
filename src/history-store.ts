@@ -90,12 +90,22 @@ export type ClearHistoryResult =
 export type Clock = () => string;
 
 export class HistoryStore {
+	private readonly identity: ProjectIdentity;
+	private readonly maxEntries: number;
+	private loaded: LoadHistoryResult;
+	private readonly now: Clock;
+
 	constructor(
-		private readonly identity: ProjectIdentity,
-		private readonly maxEntries: number,
-		private loaded: LoadHistoryResult,
-		private readonly now: Clock = currentIsoTimestamp,
-	) {}
+		identity: ProjectIdentity,
+		maxEntries: number,
+		loaded: LoadHistoryResult,
+		now: Clock = currentIsoTimestamp,
+	) {
+		this.identity = identity;
+		this.maxEntries = maxEntries;
+		this.loaded = loaded;
+		this.now = now;
+	}
 
 	get projectRoot(): string {
 		return this.identity.projectRoot;
