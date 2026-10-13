@@ -1,25 +1,108 @@
 #!/bin/sh
-# Re-runs typecheck and tests against the Pi 1.1.0 host release, the
-# job hosted CI used to run on every push. A throwaway export keeps the
-# reviewed lockfile and the working tree's node_modules untouched.
-set -eu
+# Re-runs typecheck and tests against each supported Pi host release, the job
+# hosted CI used to run, on each pushed commit. Each version installs with
+# `npm ci --ignore-scripts` from its own committed lockfile
+# (compat/pi-<version>/, resolved under npm min-release-age=3) into its own
+# directory, which the commit's node_modules then points at; package.json and
+# the main lockfile stay as committed, and nothing is resolved at push time.
+# Regenerate a lockfile: copy package.json into compat/pi-<v>/, pin the
+# @earendil-works packages to <v>, then run
+#   npm install --package-lock-only --ignore-scripts --min-release-age=3
 PI_COMPAT_VERSIONS='1.1.0'
-# The sibling packages ship in lockstep with the host; pinning only some of
-# them lets the rest drift to a newer release and breaks the check.
-PI_PACKAGES='pi-coding-agent pi-tui pi-codemode pi-ai pi-agent-core pi-mcp chord'
-PI_SCOPE='@earendil-works'
+# The compat lockfile replaces the root install, so skip that one. at_sha
+# runs checks with set -e off, so each step returns on failure.
+root_deps=no
+PI_SCOPE='@earendil-works/'
+
+checks() {
+	for v in $PI_COMPAT_VERSIONS; do
+		echo "pre-push: Pi $v compatibility" >&2
+		lock="compat/pi-$v"
+		# The compat manifest must match package.json except the Pi pins;
+		# otherwise its lockfile tests a stale dependency set.
+		node -e '
+const fs = require("node:fs");
+const scope = process.argv[2];
+const strip = (p) => {
+	const m = JSON.parse(fs.readFileSync(p, "utf8"));
+	for (const k of ["dependencies", "devDependencies", "peerDependencies"])
+		for (const n of Object.keys(m[k] ?? {})) if (n.startsWith(scope)) delete m[k][n];
+	return JSON.stringify(m);
+};
+if (strip("package.json") !== strip(process.argv[1] + "/package.json")) {
+	console.error(`pre-push: ${process.argv[1]}/package.json is stale; regenerate it (see 30-pi-compat)`);
+	process.exit(1);
+}' "$lock" "$PI_SCOPE" || return 1
+		deps=".pi-compat-$v"
+		mkdir "$deps" || return 1
+		cp "$lock/package.json" "$lock/package-lock.json" "$deps/" || return 1
+		(cd "$deps" && npm ci --ignore-scripts --no-audit --no-fund >/dev/null) || return 1
+		rm -rf node_modules || return 1
+		ln -s "$deps/node_modules" node_modules || return 1
+		npm run --silent typecheck || return 1
+		npm test --silent || return 1
+	done
+}
+
+# Shared helpers (staged_git, pushed_shas, at_sha, darwin_only) from the dotf
+# dispatcher; sourced, never copied, so the reviewed global copy is the one used.
+# shellcheck source=/dev/null
+. "${HOOK_HELPERS:?HOOK_HELPERS is not set: run this hook through the dotf git hooks dispatcher}"
+
+# Second layer behind the dispatcher's central scrub: drop the repository-local
+# variables Git exports to hooks (GIT_DIR, GIT_INDEX_FILE, ...) so nothing below
+# can act on this repository by accident, for example a test suite running
+# `git init` or `git config`. `git -c` overrides (GIT_CONFIG_*) are kept.
+vars=$(git rev-parse --local-env-vars) || exit 1
+for var in $vars; do
+	case "$var" in
+	GIT_CONFIG_PARAMETERS | GIT_CONFIG_COUNT | GIT_CONFIG_KEY_* | GIT_CONFIG_VALUE_*) ;;
+	*) unset -v "$var" ;;
+	esac
+done
+
 top=$(git rev-parse --show-toplevel)
-work=$(mktemp -d "${TMPDIR:-/tmp}/pi-history-compat.XXXXXX")
-trap 'rm -rf "$work"' EXIT HUP INT TERM
-git -C "$top" archive HEAD | tar -x -C "$work"
-cd "$work"
-npm ci --ignore-scripts --no-audit --no-fund >/dev/null
-for v in $PI_COMPAT_VERSIONS; do
-	echo "pre-push: Pi $v compatibility" >&2
-	specs=''
-	for p in $PI_PACKAGES; do specs="$specs $PI_SCOPE/$p@$v"; done
-	# shellcheck disable=SC2086 # one argument per package spec
-	npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund $specs >/dev/null || exit 1
-	npm run --silent typecheck
-	npm test --silent
+
+# Dependencies when at_sha runs in a temporary worktree of the pushed commit:
+# installed from that commit's committed lockfile only, never resolved. npm
+# skips lifecycle scripts; pnpm runs only the builds the repository allowlists
+# in pnpm-workspace.yaml (allowBuilds, exact names; strictDepBuilds fails on
+# any other build script), under its minimumReleaseAge. In place (clean HEAD) the clone's install is used.
+install_deps() {
+	[ "${root_deps:-yes}" = yes ] || return 0
+	[ "$(pwd -P)" != "$(CDPATH='' cd -- "$top" && pwd -P)" ] || return 0
+	if [ -f pnpm-lock.yaml ]; then
+		pnpm install --frozen-lockfile >/dev/null || return 1
+	elif [ -f package-lock.json ]; then
+		npm ci --ignore-scripts --no-audit --no-fund >/dev/null || return 1
+	fi
+}
+
+# at_sha runs its command in a context where set -e is off, so every step
+# below returns on failure explicitly.
+run_at() {
+	install_deps || return 1
+	checks || return 1
+}
+
+# Tags carry no branch commits: drop tag lines before pushed_shas (which
+# already skips deletions), and check each pushed commit once.
+if [ -z "${HOOK_STDIN_FILE:-}" ] && [ -t 0 ]; then
+	shas=$(git rev-parse HEAD) # manual run from a terminal
+else
+	shas=$(grep -v -e '^refs/tags/' -e ' refs/tags/[^ ]* [^ ]*$' <"${HOOK_STDIN_FILE:-/dev/stdin}" | pushed_shas | awk '!seen[$0]++') || true
+fi
+if [ -z "$shas" ]; then
+	echo "pre-push: $(basename -- "$0"): nothing to check (only deletes or tags pushed)" >&2
+	exit 0
+fi
+# A for loop over captured SHAs, not `pushed_shas | while`: an exit inside a
+# piped loop only leaves its subshell and would let the push through. The
+# helpers use sha, tmp and rc themselves, so this loop uses its own names.
+for pp_commit in $shas; do
+	echo "pre-push: $(basename -- "$0"): checking $pp_commit" >&2
+	if ! at_sha "$pp_commit" run_at; then
+		echo "pre-push: $(basename -- "$0"): checks failed for $pp_commit" >&2
+		exit 1
+	fi
 done

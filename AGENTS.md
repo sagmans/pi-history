@@ -27,4 +27,4 @@ the maintainer smoke test. Use synthetic, redacted test data only.
 
 ## Git hooks
 
-Checks run in `.githooks/`, not in push/PR CI. Run `sh scripts/setup-hooks.sh` once per clone; never bypass hooks with `--no-verify`. `pre-push`: `npm run verify:ci` (audit, Biome, typecheck, tests).
+Checks run in `.githooks/`, not in push/PR CI. The global dotf hooks run `.githooks/<hook>.d/` once a human trusts the clone with `githooks-trust`; agents never write the trust store or drive `githooks-trust`. Never bypass hooks with `--no-verify`. `pre-push`: `npm run verify:ci` (audit, Biome, typecheck, tests), then the Pi 1.1.0 compatibility check, installed with `npm ci --ignore-scripts` from the committed `compat/pi-1.1.0` lockfile (resolved with min-release-age=3).

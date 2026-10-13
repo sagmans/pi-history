@@ -41,13 +41,9 @@ implementation, review, release, or support services for forks.
 
 ## Git hooks
 
-Checks run in tracked local Git hooks instead of push/PR CI. Enable them once per clone:
+Checks run in tracked local Git hooks instead of push/PR CI. The scripts live in `.githooks/<hook>.d/` and run through the global dotf hooks: the global check runs first, then each script in name order. There is no per-clone setup and no repo-local `core.hooksPath`; if an older setup left one, remove it with `git config --local --unset core.hooksPath`. Repository hooks run only after you review this clone's `.githooks` and trust it with `githooks-trust`; until then only the global checks run. Pre-push checks test exactly each pushed commit: in place only when it is the clean, unmodified checkout, otherwise in a temporary worktree of that commit.
 
-```sh
-sh scripts/setup-hooks.sh
-```
+This repository's checks:
 
-Each hook runs your global Git hook of the same name first (if any), then this repository's checks:
-
-- `pre-commit`: staged whitespace and conflict-marker check. Then `npm run check` (Biome).
-- `pre-push`: `npm run verify:ci` (audit, Biome, typecheck, tests).
+- `pre-commit`: staged whitespace and conflict-marker check. Then Biome on the staged files.
+- `pre-push`: `npm run verify:ci` (audit, Biome, typecheck, tests), then the Pi 1.1.0 compatibility check, installed with `npm ci --ignore-scripts` from the committed `compat/pi-1.1.0` lockfile (resolved with min-release-age=3).

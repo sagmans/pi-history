@@ -1,5 +1,70 @@
 #!/bin/sh
-# Runs audit, lint, typecheck and tests that hosted CI ran on every push, so a regression never reaches main. The release workflow repeats them before publish.
+# Runs `npm run verify:ci` (audit, Biome, typecheck, tests) on each pushed commit.
 set -eu
-cd "$(git rev-parse --show-toplevel)"
-npm run verify:ci
+
+checks() {
+	npm run verify:ci || return 1
+}
+
+# Shared helpers (staged_git, pushed_shas, at_sha, darwin_only) from the dotf
+# dispatcher; sourced, never copied, so the reviewed global copy is the one used.
+# shellcheck source=/dev/null
+. "${HOOK_HELPERS:?HOOK_HELPERS is not set: run this hook through the dotf git hooks dispatcher}"
+
+# Second layer behind the dispatcher's central scrub: drop the repository-local
+# variables Git exports to hooks (GIT_DIR, GIT_INDEX_FILE, ...) so nothing below
+# can act on this repository by accident, for example a test suite running
+# `git init` or `git config`. `git -c` overrides (GIT_CONFIG_*) are kept.
+vars=$(git rev-parse --local-env-vars) || exit 1
+for var in $vars; do
+	case "$var" in
+	GIT_CONFIG_PARAMETERS | GIT_CONFIG_COUNT | GIT_CONFIG_KEY_* | GIT_CONFIG_VALUE_*) ;;
+	*) unset -v "$var" ;;
+	esac
+done
+
+top=$(git rev-parse --show-toplevel)
+
+# Dependencies when at_sha runs in a temporary worktree of the pushed commit:
+# installed from that commit's committed lockfile only, never resolved. npm
+# skips lifecycle scripts; pnpm runs only the builds the repository allowlists
+# in pnpm-workspace.yaml (allowBuilds, exact names; strictDepBuilds fails on
+# any other build script), under its minimumReleaseAge. In place (clean HEAD) the clone's install is used.
+install_deps() {
+	[ "${root_deps:-yes}" = yes ] || return 0
+	[ "$(pwd -P)" != "$(CDPATH='' cd -- "$top" && pwd -P)" ] || return 0
+	if [ -f pnpm-lock.yaml ]; then
+		pnpm install --frozen-lockfile >/dev/null || return 1
+	elif [ -f package-lock.json ]; then
+		npm ci --ignore-scripts --no-audit --no-fund >/dev/null || return 1
+	fi
+}
+
+# at_sha runs its command in a context where set -e is off, so every step
+# below returns on failure explicitly.
+run_at() {
+	install_deps || return 1
+	checks || return 1
+}
+
+# Tags carry no branch commits: drop tag lines before pushed_shas (which
+# already skips deletions), and check each pushed commit once.
+if [ -z "${HOOK_STDIN_FILE:-}" ] && [ -t 0 ]; then
+	shas=$(git rev-parse HEAD) # manual run from a terminal
+else
+	shas=$(grep -v -e '^refs/tags/' -e ' refs/tags/[^ ]* [^ ]*$' <"${HOOK_STDIN_FILE:-/dev/stdin}" | pushed_shas | awk '!seen[$0]++') || true
+fi
+if [ -z "$shas" ]; then
+	echo "pre-push: $(basename -- "$0"): nothing to check (only deletes or tags pushed)" >&2
+	exit 0
+fi
+# A for loop over captured SHAs, not `pushed_shas | while`: an exit inside a
+# piped loop only leaves its subshell and would let the push through. The
+# helpers use sha, tmp and rc themselves, so this loop uses its own names.
+for pp_commit in $shas; do
+	echo "pre-push: $(basename -- "$0"): checking $pp_commit" >&2
+	if ! at_sha "$pp_commit" run_at; then
+		echo "pre-push: $(basename -- "$0"): checks failed for $pp_commit" >&2
+		exit 1
+	fi
+done
