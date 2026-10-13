@@ -1,27 +1,21 @@
 #!/bin/sh
-# Runs Biome on the staged files. The index decides which files are checked;
-# Biome reads their working-tree copies, which is accepted for speed.
+# Runs Biome on the staged files, as staged: the content is read from the
+# index into a temporary tree, never from the working tree.
 set -eu
 
 # Shared helpers (staged_git, pushed_shas, at_sha, darwin_only) from the dotf
-# dispatcher; sourced, never copied, so the reviewed global copy is the one used.
+# dispatcher, which also scrubs git's repository-local variables first.
 # shellcheck source=/dev/null
 . "${HOOK_HELPERS:?HOOK_HELPERS is not set: run this hook through the dotf git hooks dispatcher}"
+# Repository helpers, loaded relative to this script (the reviewed copy).
+# shellcheck source=../_lib/staged.sh
+. "$(dirname -- "$0")/../_lib/staged.sh"
 
-# Second layer behind the dispatcher's central scrub: drop the repository-local
-# variables Git exports to hooks (GIT_DIR, GIT_INDEX_FILE, ...) so nothing below
-# can act on this repository by accident, for example a test suite running
-# `git init` or `git config`. `git -c` overrides (GIT_CONFIG_*) are kept.
-vars=$(git rev-parse --local-env-vars) || exit 1
-for var in $vars; do
-	case "$var" in
-	GIT_CONFIG_PARAMETERS | GIT_CONFIG_COUNT | GIT_CONFIG_KEY_* | GIT_CONFIG_VALUE_*) ;;
-	*) unset -v "$var" ;;
-	esac
-done
-
-cd "$(git rev-parse --show-toplevel)"
-files=$(staged_git diff --cached --name-only --diff-filter=ACMR -z | tr '\0' '\n')
+files=$(staged_git diff --cached --name-only --diff-filter=ACMR -z | tr '\0' '\n') || exit 1
 [ -n "$files" ] || exit 0
-# shellcheck disable=SC2086 # one argument per path; tracked paths have no newlines
-printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 npx --no-install biome check --no-errors-on-unmatched --files-ignore-unknown=true
+staged_tree
+cd "$st_tree"
+# No .git in the temporary tree, so Biome's VCS integration is off; only the
+# staged paths are passed, so the ignore file has nothing to filter.
+printf '%s\n' "$files" | tr '\n' '\0' |
+	xargs -0 ./node_modules/.bin/biome check --vcs-enabled=false --no-errors-on-unmatched --files-ignore-unknown=true

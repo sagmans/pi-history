@@ -4,20 +4,8 @@
 set -eu
 
 # Shared helpers (staged_git, pushed_shas, at_sha, darwin_only) from the dotf
-# dispatcher; sourced, never copied, so the reviewed global copy is the one used.
+# dispatcher, which also scrubs git's repository-local variables first.
 # shellcheck source=/dev/null
 . "${HOOK_HELPERS:?HOOK_HELPERS is not set: run this hook through the dotf git hooks dispatcher}"
-
-# Second layer behind the dispatcher's central scrub: drop the repository-local
-# variables Git exports to hooks (GIT_DIR, GIT_INDEX_FILE, ...) so nothing below
-# can act on this repository by accident, for example a test suite running
-# `git init` or `git config`. `git -c` overrides (GIT_CONFIG_*) are kept.
-vars=$(git rev-parse --local-env-vars) || exit 1
-for var in $vars; do
-	case "$var" in
-	GIT_CONFIG_PARAMETERS | GIT_CONFIG_COUNT | GIT_CONFIG_KEY_* | GIT_CONFIG_VALUE_*) ;;
-	*) unset -v "$var" ;;
-	esac
-done
 
 staged_git diff --cached --check
