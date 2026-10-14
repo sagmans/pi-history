@@ -6,6 +6,8 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-14
+
 ### Compatibility
 
 - Support Node.js 22, 24 and 26: typecheck and tests pass on Node 22.19.0, 24.21.0 and 26.11.1 with both the locked Pi 0.87.0 set and the Pi 1.1.0 compatibility set. Development types move to `@types/node` 26.6.5.
@@ -139,7 +141,8 @@ All notable changes to this project are documented here. This format follows
 - `/pi-history status` (metadata only) and `/pi-history clear` (confirmed wipe with a clear marker so older open sessions cannot restore entries).
 - Graceful fallback when ghost completion editor support is unavailable; `Ctrl+R` remains available.
 
-[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/sagmans/pi-history/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/sagmans/pi-history/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/sagmans/pi-history/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/sagmans/pi-history/compare/v0.1.6...v0.1.7
