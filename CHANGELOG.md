@@ -8,6 +8,7 @@ All notable changes to this project are documented here. This format follows
 
 ### Compatibility
 
+- Support Node.js 22, 24 and 26: typecheck and tests pass on Node 22.19.0, 24.21.0 and 26.11.1 with both the locked Pi 0.87.0 set and the Pi 1.1.0 compatibility set. Development types move to `@types/node` 26.6.5.
 - Support Pi 1.x: the independent CI compatibility check now runs against Pi 1.1.0 instead of 0.99.1, alongside the locked 0.87.0 baseline. No source change was needed: the Pi 1.0 to 1.1 changelog has no breaking change to the extension, editor, or TUI APIs this extension uses.
 
 ### Changed
