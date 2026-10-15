@@ -6,6 +6,10 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Update the release workflow to `actions/setup-node` 7.1.0.
+
 ## [0.1.10] - 2026-10-14
 
 ### Compatibility
