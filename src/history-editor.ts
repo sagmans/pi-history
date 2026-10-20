@@ -28,7 +28,20 @@ import {
 } from "./search.ts";
 
 const DEFAULT_SEARCH_LIMIT = 7;
-const CURSOR_AT_END_RENDER = "\x1b[7m \x1b[0m";
+// The ghost anchors on the editor's end-of-text cursor block, whose encoding
+// depends on the Pi host. Before Pi 1.2.0 it is a reverse-video space. From
+// Pi 1.2.0 the space sits between zero-width APC fake-cursor markers that the
+// TUI resolves at paint time. pi-tui's own marker exports do not exist on older
+// hosts, so both forms are spelled out here to keep every supported host
+// loading and showing the ghost.
+const LEGACY_CURSOR_AT_END_RENDER = "\x1b[7m \x1b[0m";
+const FAKE_CURSOR_START = "\x1b_pi:fc\x07";
+const FAKE_CURSOR_END = "\x1b_pi:/fc\x07";
+const FAKE_CURSOR_AT_END_RENDER = `${FAKE_CURSOR_START} ${FAKE_CURSOR_END}`;
+const CURSOR_AT_END_RENDERS: readonly string[] = [
+	FAKE_CURSOR_AT_END_RENDER,
+	LEGACY_CURSOR_AT_END_RENDER,
+];
 const ANSI_DIM = "\x1b[2m";
 // Dim + reverse video: renders the first ghost grapheme inside the cursor
 // block so the suggestion starts at the cursor cell, not one column after it.
@@ -305,7 +318,7 @@ export class HistoryEditor extends CustomEditor {
 		// (see renderGhostLine). Without this the suggestion lands one column
 		// right of the cursor.
 		const beforeGhost = target.line.slice(0, target.cursorStart);
-		const afterCursor = target.line.slice(target.cursorStart + CURSOR_AT_END_RENDER.length);
+		const afterCursor = target.line.slice(target.cursorEnd);
 		const remainingWidth = Math.max(0, width - visibleWidth(beforeGhost));
 		if (remainingWidth === 0) return lines;
 
@@ -351,19 +364,28 @@ export class HistoryEditor extends CustomEditor {
 		return text.match(/^ */)?.[0] ?? "";
 	}
 
+	// cursorEnd is returned with cursorStart because the two cursor encodings
+	// differ in length, so renderGhost cannot derive it from a single constant.
 	private findGhostTarget(
 		lines: string[],
-	): { index: number; line: string; cursorStart: number } | undefined {
-		const index = lines.findIndex((line) => line.includes(CURSOR_AT_END_RENDER));
-		if (index < 0) return undefined;
-		const line = lines[index];
-		return line
-			? {
-					index,
-					line,
-					cursorStart: line.indexOf(CURSOR_AT_END_RENDER),
-				}
-			: undefined;
+	): { index: number; line: string; cursorStart: number; cursorEnd: number } | undefined {
+		for (const [index, line] of lines.entries()) {
+			const cursor = HistoryEditor.findCursorAtEnd(line);
+			if (cursor) return { index, line, ...cursor };
+		}
+		return undefined;
+	}
+
+	// Locates the end-of-text cursor in whichever encoding the running host
+	// emits; the order of CURSOR_AT_END_RENDERS puts current hosts first.
+	private static findCursorAtEnd(
+		line: string,
+	): { cursorStart: number; cursorEnd: number } | undefined {
+		for (const render of CURSOR_AT_END_RENDERS) {
+			const cursorStart = line.indexOf(render);
+			if (cursorStart >= 0) return { cursorStart, cursorEnd: cursorStart + render.length };
+		}
+		return undefined;
 	}
 
 	private disableGhost(reason: GhostDegradationReason): void {

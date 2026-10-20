@@ -6,6 +6,10 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Show ghost completion again on Pi 1.2.0 and later. Those hosts draw the editor cursor with a new marker, and the ghost silently never appeared. Both the new and the older cursor forms are now recognised, so every supported Pi release below 1.4.0 shows the ghost.
+
 ### Changed
 
 - Update the release workflow to `actions/setup-node` 7.1.0.
