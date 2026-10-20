@@ -26,6 +26,20 @@ updates:
     open-pull-requests-limit: 5
     cooldown:
       default-days: 7
+    ignore:
+      # The lockfile holds Pi 0.87.0, the oldest tested host, and only this
+      # lockfile tests it. Any version update would retire that baseline, so
+      # moving it stays a deliberate decision. update-types binds version
+      # updates only, so advisory fixes still open a pull request.
+      # Pi 1.4.0 and later are outside the supported host line. A versions
+      # rule binds security updates too, so no proposal can reach them.
+      - dependency-name: "@earendil-works/*"
+        versions:
+          - ">=1.4.0"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
     groups:
       # pi-coding-agent depends on pi-tui, and this repo also depends on it
       # directly. Separate proposals resolve two pi-tui copies, so typecheck
