@@ -6,6 +6,8 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-10-20
+
 ### Fixed
 
 - Show ghost completion again on Pi 1.2.0 and later. Those hosts draw the editor cursor with a new marker, and the ghost silently never appeared. Both the new and the older cursor forms are now recognised, so every supported Pi release below 1.4.0 shows the ghost.
@@ -153,7 +155,8 @@ All notable changes to this project are documented here. This format follows
 - `/pi-history status` (metadata only) and `/pi-history clear` (confirmed wipe with a clear marker so older open sessions cannot restore entries).
 - Graceful fallback when ghost completion editor support is unavailable; `Ctrl+R` remains available.
 
-[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.10...HEAD
+[Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/sagmans/pi-history/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/sagmans/pi-history/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/sagmans/pi-history/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/sagmans/pi-history/compare/v0.1.7...v0.1.8
