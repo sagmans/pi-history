@@ -1,6 +1,6 @@
 # Maintainer development
 
-The `pre-push` hook also runs typecheck and tests against Pi 1.1.0 in a throwaway copy.
+The `pre-push` hook also runs typecheck and tests against Pi 1.1.0 and Pi 1.3.0 in a throwaway copy.
 The locked baseline remains unchanged so older supported hosts retain coverage.
 
 Owner-authorized maintenance. Public bug reports and feature requests can be filed.

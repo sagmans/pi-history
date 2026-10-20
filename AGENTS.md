@@ -27,4 +27,4 @@ the maintainer smoke test. Use synthetic, redacted test data only.
 
 ## Git hooks
 
-Checks run in `.githooks/`, not in push/PR CI. Run `scripts/setup-hooks` after cloning. All checks must pass before you push. Never use `--no-verify`. `pre-push`: `npm run verify:ci` (audit, Biome, typecheck, tests), then the Pi 1.1.0 compatibility check, installed with `npm ci --ignore-scripts` from the committed `compat/pi-1.1.0` lockfile (resolved with min-release-age=3).
+Checks run in `.githooks/`, not in push/PR CI. Run `scripts/setup-hooks` after cloning. All checks must pass before you push. Never use `--no-verify`. `pre-push`: `npm run verify:ci` (audit, Biome, typecheck, tests), then the Pi 1.1.0 and 1.3.0 compatibility checks, each installed with `npm ci --ignore-scripts` from its committed `compat/pi-<version>` lockfile (resolved with min-release-age=3).

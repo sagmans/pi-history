@@ -6,6 +6,14 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Show ghost completion again on Pi 1.2.0 and later. Those hosts draw the editor cursor with a new marker, and the ghost silently never appeared. Both the new and the older cursor forms are now recognised, so every supported Pi release below 1.4.0 shows the ghost.
+
+### Compatibility
+
+- The pre-push compatibility check now also runs against Pi 1.3.0 from its own committed lockfile, beside Pi 1.1.0 and the locked 0.87.0 baseline, so a host change like the cursor marker above fails before push instead of reaching users.
+
 ### Changed
 
 - Update the release workflow to `actions/setup-node` 7.1.0.
