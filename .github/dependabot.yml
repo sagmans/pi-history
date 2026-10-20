@@ -1,3 +1,8 @@
+# Dependabot policy. No package manager setting in this repository sets a
+# minimum release age, so the cooldown is the only supply chain window: a fresh
+# release must survive a week of public scrutiny before a bot proposes it.
+# compat/pi-1.1.0 is not listed on purpose: its Pi pins are a fixed host
+# baseline, and it is regenerated from package.json, not bumped on its own.
 version: 2
 updates:
   # CI actions are pinned to full SHAs; dependabot still proposes version bumps.
@@ -5,14 +10,36 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns:
+          - "*"
   - package-ecosystem: npm
     directory: /
     schedule:
-      # Dependabot holds version updates for a default three-day cooldown after
+      # Dependabot holds version updates for the cooldown below after
       # publication, so a grouped proposal can lag this weekly schedule without
       # the group being broken.
       interval: weekly
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    ignore:
+      # The lockfile holds Pi 0.87.0, the oldest tested host, and only this
+      # lockfile tests it. Any version update would retire that baseline, so
+      # moving it stays a deliberate decision. update-types binds version
+      # updates only, so advisory fixes still open a pull request.
+      # Pi 1.4.0 and later are outside the supported host line. A versions
+      # rule binds security updates too, so no proposal can reach them.
+      - dependency-name: "@earendil-works/*"
+        versions:
+          - ">=1.4.0"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
     groups:
       # pi-coding-agent depends on pi-tui, and this repo also depends on it
       # directly. Separate proposals resolve two pi-tui copies, so typecheck
@@ -27,3 +54,14 @@ updates:
         applies-to: security-updates
         patterns:
           - "@earendil-works/*"
+      # Each toolchain bump forces a compat lockfile regeneration, so one
+      # pull request for the routine bumps means one regeneration, not many.
+      dev-toolchain:
+        dependency-type: development
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "@earendil-works/*"
+        update-types:
+          - minor
+          - patch
