@@ -46,4 +46,4 @@ Checks run in tracked local Git hooks instead of push/PR CI. Run `scripts/setup-
 This repository's checks:
 
 - `pre-commit`: staged whitespace and conflict-marker check. Then Biome on the staged files.
-- `pre-push`: `npm run verify:ci` (audit, Biome, typecheck, tests), then the Pi 1.1.0 compatibility check, installed with `npm ci --ignore-scripts` from the committed `compat/pi-1.1.0` lockfile (resolved with min-release-age=3).
+- `pre-push`: `npm run verify:ci` (audit, Biome, typecheck, tests), then the Pi 1.1.0 and 1.3.0 compatibility checks, each installed with `npm ci --ignore-scripts` from its committed `compat/pi-<version>` lockfile (resolved with min-release-age=3).
