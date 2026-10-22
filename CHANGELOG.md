@@ -6,6 +6,10 @@ All notable changes to this project are documented here. This format follows
 
 ## [Unreleased]
 
+### Changed
+
+- npm publication no longer waits for a manual approval. A signed `v*` tag push by a repository admin now publishes automatically through OIDC trusted publishing, because the admin-only tag ruleset already makes the tag push the release approval. The release setup helper no longer configures a required reviewer. To restore the manual gate, add a required reviewer to the `npm-release` environment.
+
 ## [0.1.11] - 2026-10-20
 
 ### Fixed

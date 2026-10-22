@@ -18,7 +18,6 @@ export PKG_VERSION='1.2.3'
 export REPO='example/tool'
 export WORKFLOW_FILE='release.yml'
 export ENVIRONMENT='npm-release'
-export REVIEWER='release-owner'
 export TAG_PATTERN='v*'
 ```
 
@@ -32,14 +31,14 @@ bash scripts/npm/validate-workflow.sh
 ```
 
 `validate-workflow.sh` parses the workflow structurally and guarantees that one
-intended publish job carries the tag trigger, the approval-gated environment,
+intended publish job carries the tag trigger, the tag-gated environment,
 the effective `id-token: write` permission, and the hardened publish command
 together. Duplicate keys, anchors, aliases, explicit tags, non-string keys,
 parser warnings, multiple documents, and split controls fail closed. Manual
 review still owns everything outside that structure: step side effects,
 action pins, and runner configuration.
 
-Preview, then provision the approval-gated GitHub environment, tag deployment policy, and admin-only tag ruleset:
+Preview, then provision the GitHub environment, tag deployment policy, and admin-only tag ruleset. The environment has no required reviewers: only admins can push matching tags, so a signed tag push is the release approval and publishes automatically through OIDC trusted publishing. To restore a manual gate, add a required reviewer to the environment in the repository settings:
 
 ```bash
 DRY_RUN=1 bash scripts/npm/setup-github-release.sh
@@ -82,4 +81,4 @@ CONFIRM=deprecate-package bash scripts/npm/deprecate-package.sh
 
 Each mutation needs its own exact `CONFIRM` value. `DRY_RUN=1` prints shell-escaped commands and performs no mutation. Scripts neither retry nor poll, and they suppress child CLI response bodies so credentials and authentication URLs are not copied into logs.
 
-Signed tags, pushes, approval decisions, and GitHub release creation remain governed by each repository's release policy; this setup suite does not bypass those gates.
+Signed tags, tag pushes, and GitHub release creation remain governed by each repository's release policy; this setup suite does not bypass those gates.
