@@ -110,9 +110,6 @@ case "${1:-}" in
 				;;
 		esac
 		case "${2:-}" in
-			users/*)
-				printf '%s\n' "${FAKE_REVIEWER_ID:-123}"
-				;;
 			*/deployment-branch-policies)
 				case " $* " in
 					*' -X '*) ;;

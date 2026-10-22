@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Provision approval-gated GitHub release controls without stored credentials.
+# Provision tag-gated GitHub release controls without stored credentials.
+# The admin-only tag ruleset makes the signed tag push the release approval,
+# so the environment carries no required reviewers.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,35 +11,26 @@ source "${SCRIPT_DIR}/lib.sh"
 
 readonly ACTION='setup-github-release'
 readonly REPO="${REPO:-}"
-readonly REVIEWER="${REVIEWER:-}"
 readonly ENVIRONMENT="${ENVIRONMENT:-}"
 readonly TAG_PATTERN="${TAG_PATTERN:-}"
 readonly RULESET_NAME='release-tags-admin-only'
 readonly ADMIN_ROLE_ID=5
 
 validate_repository "${REPO}"
-validate_reviewer "${REVIEWER}"
 validate_environment "${ENVIRONMENT}"
 validate_tag_pattern "${TAG_PATTERN}"
 require_command "${GH_BIN}"
 require_confirmation "${ACTION}"
 "${GH_BIN}" auth status >/dev/null 2>&1 || fail 'GitHub authentication check failed'
 
-if reviewer_id="$("${GH_BIN}" api "users/${REVIEWER}" --jq '.id' 2>/dev/null)"; then
-	[[ "${reviewer_id}" =~ ^[0-9]+$ ]] || fail 'GitHub returned an invalid reviewer ID'
-else
-	status=$?
-	printf 'error: unable to resolve reviewer\n' >&2
-	exit "${status}"
-fi
-
 readonly environment_endpoint="repos/${REPO}/environments/${ENVIRONMENT}"
 readonly policy_endpoint="${environment_endpoint}/deployment-branch-policies"
 readonly ruleset_endpoint="repos/${REPO}/rulesets"
+# "reviewers" is omitted on purpose: publication must not wait for a human once
+# an admin pushes a signed tag. RELEASE.md documents re-adding one as rollback.
 environment_payload="$(cat <<JSON
 {
   "can_admins_bypass": false,
-  "reviewers": [{"type": "User", "id": ${reviewer_id}}],
   "deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}
 }
 JSON

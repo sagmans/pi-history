@@ -10,7 +10,6 @@ readonly DEFAULT_REPOSITORY='example/tool'
 readonly DEFAULT_VERSION='1.2.3'
 readonly DEFAULT_WORKFLOW='release.yml'
 readonly DEFAULT_ENVIRONMENT='npm-release'
-readonly DEFAULT_REVIEWER='release-owner'
 readonly DEFAULT_TAG_PATTERN='v*'
 readonly SECRET_MARKER='secret-auth-marker'
 REAL_NODE_BIN="$(command -v node)"
@@ -101,7 +100,6 @@ run_script_path() {
 				REPO="${DEFAULT_REPOSITORY}" \
 				WORKFLOW_FILE="${DEFAULT_WORKFLOW}" \
 				ENVIRONMENT="${DEFAULT_ENVIRONMENT}" \
-				REVIEWER="${DEFAULT_REVIEWER}" \
 				TAG_PATTERN="${DEFAULT_TAG_PATTERN}" \
 				DRY_RUN=0 \
 				"$@" \

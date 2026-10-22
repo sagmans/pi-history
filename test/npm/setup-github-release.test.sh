@@ -15,7 +15,9 @@ test_confirmation_creates_environment_policy_and_ruleset() {
 	assert_contains "${FAKE_LOG_CONTENT}" 'deployment-branch-policies -X POST' || return 1
 	assert_contains "${FAKE_LOG_CONTENT}" 'gh api repos/example/tool/rulesets -X POST --input -' || return 1
 	assert_contains "${FAKE_PAYLOAD_CONTENT}" '"can_admins_bypass": false' || return 1
-	assert_contains "${FAKE_PAYLOAD_CONTENT}" '"id": 123' || return 1
+	# The tag ruleset is the approval, so the environment must not demand a reviewer.
+	assert_not_contains "${FAKE_PAYLOAD_CONTENT}" '"reviewers"' || return 1
+	assert_not_contains "${FAKE_LOG_CONTENT}" 'gh api users/' || return 1
 	assert_contains "${FAKE_PAYLOAD_CONTENT}" 'refs/tags/v*'
 }
 
@@ -52,7 +54,7 @@ test_existing_resources_are_updated_idempotently() {
 }
 
 test_invalid_identity_inputs_fail_before_cli_calls() {
-	run_target setup-github-release.sh CONFIRM=setup-github-release REVIEWER='owner;echo'
+	run_target setup-github-release.sh CONFIRM=setup-github-release REPO='example/tool;echo'
 	assert_failure || return 1
 	read_fake_log
 	[ -z "${FAKE_LOG_CONTENT}" ] || return 1
@@ -77,12 +79,12 @@ test_legacy_entrypoint_delegates_to_guarded_setup() {
 }
 
 test_api_failure_propagates_without_leak_or_retry() {
-	run_target setup-github-release.sh CONFIRM=setup-github-release FAKE_FAIL_ENDPOINT='users/release-owner' FAKE_FAIL_STATUS=29
+	run_target setup-github-release.sh CONFIRM=setup-github-release FAKE_FAIL_ENDPOINT='repos/example/tool/environments/npm-release' FAKE_FAIL_STATUS=29
 	assert_status 29 || return 1
 	assert_not_contains "${OUTPUT}" "${SECRET_MARKER}" || return 1
 	read_fake_log
 	local calls
-	calls="$(grep -c 'gh api users/release-owner' "${FAKE_LOG}" || true)"
+	calls="$(grep -c 'gh api repos/example/tool/environments/npm-release ' "${FAKE_LOG}" || true)"
 	[ "${calls}" -eq 1 ]
 }
 
