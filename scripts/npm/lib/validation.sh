@@ -5,7 +5,6 @@ readonly PACKAGE_NAME_PATTERN='^@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$'
 readonly REPOSITORY_PATTERN='^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$'
 readonly WORKFLOW_FILE_PATTERN='^[A-Za-z0-9][A-Za-z0-9._-]*\.ya?ml$'
 readonly ENVIRONMENT_PATTERN='^[A-Za-z0-9][A-Za-z0-9._-]*$'
-readonly REVIEWER_PATTERN='^[A-Za-z0-9][A-Za-z0-9-]{0,38}$'
 readonly TAG_PATTERN_PATTERN='^[A-Za-z0-9._/-]+[*]?$'
 readonly VERSION_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$'
 readonly PACKAGE_SPEC_PATTERN='^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*@[^[:space:];&|`$<>]+$'
@@ -33,11 +32,6 @@ validate_workflow_file() {
 validate_environment() {
 	local value="${1:-}"
 	[[ "${value}" =~ ${ENVIRONMENT_PATTERN} ]] || fail 'ENVIRONMENT contains unsupported characters'
-}
-
-validate_reviewer() {
-	local value="${1:-}"
-	[[ "${value}" =~ ${REVIEWER_PATTERN} ]] || fail 'REVIEWER must be a GitHub login'
 }
 
 validate_tag_pattern() {

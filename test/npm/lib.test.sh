@@ -19,7 +19,6 @@ test_accepts_valid_inputs() {
 	validate_repository 'example/tool'
 	validate_workflow_file 'release.yml'
 	validate_environment 'npm-release'
-	validate_reviewer 'release-owner'
 	validate_tag_pattern 'release/v*'
 	validate_version '1.2.3-rc.1'
 }
@@ -29,7 +28,6 @@ test_rejects_invalid_inputs() {
 	! (validate_repository 'owner/repo/extra') >/dev/null 2>&1 || return 1
 	! (validate_workflow_file '../release.yml') >/dev/null 2>&1 || return 1
 	! (validate_environment 'release env') >/dev/null 2>&1 || return 1
-	! (validate_reviewer 'owner;echo') >/dev/null 2>&1 || return 1
 	! (validate_tag_pattern 'v*"') >/dev/null 2>&1 || return 1
 	! (validate_version 'latest') >/dev/null 2>&1
 }

@@ -46,14 +46,13 @@ changes; patch bumps are fixes only. The git tag (`vX.Y.Z`) and
    and exactly one `Unreleased` section remains.
 7. Waiver evidence (only if a gate above is waived): a durable, SHA-bound
    waiver record written by the release owner exists against the exact
-   candidate SHA. With no waiver record, the tag cannot be created and
-   publication cannot be approved.
+   candidate SHA. With no waiver record, the tag cannot be created.
 
 A gate may only be waived by the release owner. The waiver rationale is
 recorded against the exact candidate SHA before tagging (gate 7) and
 reproduced in the published GitHub release notes after publication; the
 SHA-bound waiver record — not the later GitHub release — is what authorizes
-the tag and publication approval.
+the tag, and the tag push is the publication approval.
 
 ## Tagging
 
@@ -67,12 +66,14 @@ git tag -s -a vX.Y.Z -m "vX.Y.Z" <merged-sha>
 git push origin vX.Y.Z
 ```
 
-Tag creation for `v*` is restricted to repository admins by a ruleset. The
-tag push triggers the `release` workflow: it re-verifies the candidate and
-then waits for the release owner's approval on the `npm-release` environment
-before publishing to npm via OIDC trusted publishing (no npm token is stored
-anywhere; provenance attestations are generated automatically). A waived gate
-cannot clear this approval without the SHA-bound waiver record from gate 7.
+Tag creation for `v*` is restricted to repository admins by the
+`release-tags-admin-only` ruleset, so the signed tag push by an admin is the
+release approval. The tag push triggers the `release` workflow: it re-verifies
+the candidate and then publishes to npm automatically via OIDC trusted
+publishing on the `npm-release` environment (no npm token is stored anywhere;
+provenance attestations are generated automatically). The environment admits
+only `v*` tags and has no required reviewers. Push the tag only after every
+gate above passes, or after the SHA-bound waiver record from gate 7 exists.
 
 After publication, create the GitHub release from the tag using the drafted
 notes.
@@ -108,7 +109,7 @@ OIDC releases from the supported GitHub-hosted runner. Then configure
 `.github/workflows/release.yml` workflow and `npm-release` environment, with
 `npm publish` explicitly allowed. Require two-factor authentication and
 disallow tokens before any later release. Releases after `v0.1.3` use the
-approval-gated OIDC publish job and automatic provenance normally.
+tag-gated OIDC publish job and automatic provenance normally.
 
 ### Retire the unscoped package
 
@@ -125,6 +126,10 @@ Runtime configuration and prompt history remain under
 
 ## Rollback
 
+- **Manual publish approval:** to make publication wait for a human again,
+  add a required reviewer to the `npm-release` environment in the repository
+  settings. Later tag pushes then pause at the publish job until that
+  reviewer approves.
 - **Bad tag/release:** keep the signed tag, source SHA, and GitHub release
   record intact. npm versions are immutable, and deleting these references
   breaks the source/notes chain and allows accidental tag-name reuse.
