@@ -12,8 +12,10 @@ changes; patch bumps are fixes only. The git tag (`vX.Y.Z`) and
 ## Gates — all required before tagging
 
 1. Candidate lands on `main` through a reviewed PR (squash merge).
-2. Full CI matrix green on the exact merged SHA: Ubuntu + macOS ×
-   Node 22.19.0 + 24, audit gate included.
+2. Verification matrix green on the exact merged SHA: `npm run verify:ci`
+   (audit gate included) on Ubuntu + macOS × Node 22.19.0 + 24. There is no
+   hosted CI workflow; the tracked `pre-push` hook runs `verify:ci` and the
+   maintainer runs the remaining platform/Node legs locally.
 3. `npm run verify:ci` green locally for the maintainer.
 4. Complete both disposable smoke checks against the exact merged SHA:
 
