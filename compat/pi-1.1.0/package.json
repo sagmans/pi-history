@@ -51,6 +51,11 @@
 		"@earendil-works/pi-coding-agent": "*",
 		"@earendil-works/pi-tui": "*"
 	},
+	"overrides": {
+		"@earendil-works/pi-coding-agent": {
+			"undici": "8.12.2"
+		}
+	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.15",
 		"@earendil-works/pi-coding-agent": "1.1.0",
