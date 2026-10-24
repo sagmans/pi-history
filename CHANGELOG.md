@@ -10,6 +10,10 @@ All notable changes to this project are documented here. This format follows
 
 - npm publication no longer waits for a manual approval. A signed `v*` tag push by a repository admin now publishes automatically through OIDC trusted publishing, because the admin-only tag ruleset already makes the tag push the release approval. The release setup helper no longer configures a required reviewer. To restore the manual gate, add a required reviewer to the `npm-release` environment.
 
+### Security
+
+- Development only: an npm override pins the Pi host's Undici dependency to 8.12.2 in the locked 0.87.0 baseline and in the Pi 1.1.0 and 1.3.0 compatibility lockfiles, which fixes GHSA-xjj6-f33q-929c, GHSA-4qv8-2p9j-2685, and GHSA-f72v-6w45-q472. The pinned Pi versions are unchanged. The published package does not depend on Undici and is unchanged.
+
 ## [0.1.11] - 2026-10-20
 
 ### Fixed
