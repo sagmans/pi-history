@@ -20,7 +20,10 @@ jobs:
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24"
+          # An exact patch keeps every release on a known runtime; a floating
+          # line resolves from the runner toolcache and can lag a security
+          # release. Move both pins here with each Node 24 security fix.
+          node-version: "24.22.1"
           cache: npm
 
       - run: npm ci --ignore-scripts
@@ -56,7 +59,7 @@ jobs:
       # Node 24 bundles npm >= 11.5.1, the minimum for trusted publishing.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24"
+          node-version: "24.22.1"
           registry-url: "https://registry.npmjs.org"
 
       # Provenance attestation is generated automatically for OIDC publishes
