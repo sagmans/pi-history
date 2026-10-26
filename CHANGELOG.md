@@ -13,6 +13,7 @@ All notable changes to this project are documented here. This format follows
 ### Security
 
 - Development only: an npm override pins the Pi host's Undici dependency to 8.12.2 in the locked 0.87.0 baseline and in the Pi 1.1.0 and 1.3.0 compatibility lockfiles, which fixes GHSA-xjj6-f33q-929c, GHSA-4qv8-2p9j-2685, and GHSA-f72v-6w45-q472. The pinned Pi versions are unchanged. The published package does not depend on Undici and is unchanged.
+- Release only: the tag release workflow now verifies and publishes on Node.js `24.22.1` instead of the floating `24` line, which could resolve to a runtime without the 2026-10-21 security fixes for CVE-2026-111497 (Brotli decoder out-of-bounds write) and CVE-2026-105483 and CVE-2026-106069 (TLS hostname check bypass). The `engines` range and the published package are unchanged.
 
 ## [0.1.11] - 2026-10-20
 
