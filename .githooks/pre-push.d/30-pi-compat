@@ -9,7 +9,7 @@
 # @earendil-works packages to <v>, then run
 #   npm install --package-lock-only --ignore-scripts --min-release-age=3
 set -eu
-PI_COMPAT_VERSIONS='1.1.0 1.3.0'
+PI_COMPAT_VERSIONS='0.87.0 1.1.0 1.3.0'
 PI_SCOPE='@earendil-works/'
 
 # Runs in the temporary worktree. Called with set -e off (inside `if`), so
