@@ -46,7 +46,7 @@ permitted.
 
 The release audit gate (`npm run audit`) fails on any high or critical
 advisory. No advisories are currently waived. The dependency audit for the
-Pi 0.87.0 upgrade reports no known vulnerabilities.
+Pi 1.4.0 development host reports no high or critical advisory.
 If a future dependency pins a vulnerable version that npm refuses to
 override consumer-side, a waiver must live in `scripts/npm/audit-gate.mjs`,
 scoped to the exact advisory URLs at the exact install path with a recorded
