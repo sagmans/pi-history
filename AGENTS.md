@@ -1,15 +1,16 @@
 # Repository agent guidance
 
-This repository accepts bug reports and feature requests. Feature requests do not
-guarantee evaluation or implementation. External pull requests are unsupported;
-read the [participation policy](CONTRIBUTING.md).
+This repository accepts bug reports and feature requests. Feature requests do
+not guarantee evaluation or implementation. External pull requests are
+unsupported; read the [participation policy](CONTRIBUTING.md).
 
 ## Maintainer paths
 
 - Setup: run `npm ci --ignore-scripts` from the repository root.
 - Verification: run `npm run verify` while iterating and `npm run verify:ci`
-  before pushing. [`docs/maintainer-development.md`](docs/maintainer-development.md)
-  documents the available checks.
+  before pushing.
+  [`docs/maintainer-development.md`](docs/maintainer-development.md) documents
+  the available checks.
 - Runtime loading: follow the isolated
   [maintainer smoke test](docs/maintainer-smoke.md).
 - Security: follow [`SECURITY.md`](SECURITY.md), including private vulnerability
@@ -27,4 +28,9 @@ the maintainer smoke test. Use synthetic, redacted test data only.
 
 ## Git hooks
 
-Checks run in `.githooks/`, not in push/PR CI. Run `scripts/setup-hooks` after cloning. All checks must pass before you push. Never use `--no-verify`. `pre-push`: `npm run verify:ci` (audit, Biome, typecheck, tests), then the Pi 0.87.0, 1.1.0 and 1.3.0 compatibility checks, each installed with `npm ci --ignore-scripts` from its committed `compat/pi-<version>` lockfile (resolved with min-release-age=3).
+Checks run in `.githooks/`, not in push/PR CI. Run `scripts/setup-hooks` after
+cloning. All checks must pass before you push. Never use `--no-verify`.
+`pre-push`: `npm run verify:ci` (audit, Biome, typecheck, tests), then the Pi
+0.87.0, 1.1.0 and 1.3.0 compatibility checks, each installed with
+`npm ci --ignore-scripts` from its committed `compat/pi-<version>` lockfile
+(resolved with min-release-age=3).

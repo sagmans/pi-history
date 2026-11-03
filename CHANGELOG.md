@@ -8,22 +8,41 @@ All notable changes to this project are documented here. This format follows
 
 ### Changed
 
-- npm publication no longer waits for a manual approval. A signed `v*` tag push by a repository admin now publishes automatically through OIDC trusted publishing, because the admin-only tag ruleset already makes the tag push the release approval. The release setup helper no longer configures a required reviewer. To restore the manual gate, add a required reviewer to the `npm-release` environment.
+- npm publication no longer waits for a manual approval. A signed `v*` tag push
+  by a repository admin now publishes automatically through OIDC trusted
+  publishing, because the admin-only tag ruleset already makes the tag push the
+  release approval. The release setup helper no longer configures a required
+  reviewer. To restore the manual gate, add a required reviewer to the
+  `npm-release` environment.
 
 ### Security
 
-- Development only: an npm override pins the Pi host's Undici dependency to 8.12.2 in the locked 0.87.0 baseline and in the Pi 1.1.0 and 1.3.0 compatibility lockfiles, which fixes GHSA-xjj6-f33q-929c, GHSA-4qv8-2p9j-2685, and GHSA-f72v-6w45-q472. The pinned Pi versions are unchanged. The published package does not depend on Undici and is unchanged.
-- Release only: the tag release workflow now verifies and publishes on Node.js `24.22.1` instead of the floating `24` line, which could resolve to a runtime without the 2026-10-21 security fixes for CVE-2026-111497 (Brotli decoder out-of-bounds write) and CVE-2026-105483 and CVE-2026-106069 (TLS hostname check bypass). The `engines` range and the published package are unchanged.
+- Development only: an npm override pins the Pi host's Undici dependency to
+  8.12.2 in the locked 0.87.0 baseline and in the Pi 1.1.0 and 1.3.0
+  compatibility lockfiles, which fixes GHSA-xjj6-f33q-929c, GHSA-4qv8-2p9j-2685,
+  and GHSA-f72v-6w45-q472. The pinned Pi versions are unchanged. The published
+  package does not depend on Undici and is unchanged.
+- Release only: the tag release workflow now verifies and publishes on Node.js
+  `24.22.1` instead of the floating `24` line, which could resolve to a runtime
+  without the 2026-10-21 security fixes for CVE-2026-111497 (Brotli decoder
+  out-of-bounds write) and CVE-2026-105483 and CVE-2026-106069 (TLS hostname
+  check bypass). The `engines` range and the published package are unchanged.
 
 ## [0.1.11] - 2026-10-20
 
 ### Fixed
 
-- Show ghost completion again on Pi 1.2.0 and later. Those hosts draw the editor cursor with a new marker, and the ghost silently never appeared. Both the new and the older cursor forms are now recognised, so every supported Pi release below 1.4.0 shows the ghost.
+- Show ghost completion again on Pi 1.2.0 and later. Those hosts draw the editor
+  cursor with a new marker, and the ghost silently never appeared. Both the new
+  and the older cursor forms are now recognised, so every supported Pi release
+  below 1.4.0 shows the ghost.
 
 ### Compatibility
 
-- The pre-push compatibility check now also runs against Pi 1.3.0 from its own committed lockfile, beside Pi 1.1.0 and the locked 0.87.0 baseline, so a host change like the cursor marker above fails before push instead of reaching users.
+- The pre-push compatibility check now also runs against Pi 1.3.0 from its own
+  committed lockfile, beside Pi 1.1.0 and the locked 0.87.0 baseline, so a host
+  change like the cursor marker above fails before push instead of reaching
+  users.
 
 ### Changed
 
@@ -33,8 +52,13 @@ All notable changes to this project are documented here. This format follows
 
 ### Compatibility
 
-- Support Node.js 22, 24 and 26: typecheck and tests pass on Node 22.19.0, 24.21.0 and 26.11.1 with both the locked Pi 0.87.0 set and the Pi 1.1.0 compatibility set. Development types move to `@types/node` 26.6.5.
-- Support Pi 1.x: the independent CI compatibility check now runs against Pi 1.1.0 instead of 0.99.1, alongside the locked 0.87.0 baseline. No source change was needed: the Pi 1.0 to 1.1 changelog has no breaking change to the extension, editor, or TUI APIs this extension uses.
+- Support Node.js 22, 24 and 26: typecheck and tests pass on Node 22.19.0,
+  24.21.0 and 26.11.1 with both the locked Pi 0.87.0 set and the Pi 1.1.0
+  compatibility set. Development types move to `@types/node` 26.6.5.
+- Support Pi 1.x: the independent CI compatibility check now runs against Pi
+  1.1.0 instead of 0.99.1, alongside the locked 0.87.0 baseline. No source
+  change was needed: the Pi 1.0 to 1.1 changelog has no breaking change to the
+  extension, editor, or TUI APIs this extension uses.
 
 ### Changed
 
@@ -50,83 +74,152 @@ All notable changes to this project are documented here. This format follows
 
 ### Changed
 
-- Raised both Pi development dependencies to 0.87.0 and the dev-only `@types/node` typings to 26.6.2. Verified the dependency audit, maintainer checks, and isolated TUI smoke on Pi 0.87.0. Node runtime support is unchanged.
-- Clarified the release smoke gate: automated Herdr checks cover search and ghost keypresses, while the exact-SHA package install still requires interactive evidence.
+- Raised both Pi development dependencies to 0.87.0 and the dev-only
+  `@types/node` typings to 26.6.2. Verified the dependency audit, maintainer
+  checks, and isolated TUI smoke on Pi 0.87.0. Node runtime support is
+  unchanged.
+- Clarified the release smoke gate: automated Herdr checks cover search and
+  ghost keypresses, while the exact-SHA package install still requires
+  interactive evidence.
 
 ## [0.1.8] - 2026-09-10
 
 ### Changed
 
-- Extended the grouped Dependabot Pi proposals to security updates, so an advisory fix for only one of the two Pi packages cannot split them and break typecheck.
-- Extended the maintainer Herdr smoke to drive reverse search, ghost completion, and ghost absence after a confirmed clear, so those shipped features get runtime evidence from the script instead of manual keypresses.
-- Grouped Dependabot's Pi dependency proposals so `pi-coding-agent` and `pi-tui` are always raised together, keeping one resolved `pi-tui` copy and therefore one TUI type identity for typecheck.
-- Raised Pi development dependencies to 0.85.1, Biome to 2.5.12, and the dev-only `@types/node` typings to 26.5.0, keeping the direct and Pi-owned `pi-tui` pins on one version so typecheck resolves a single TUI type identity (typecheck-only; Node runtime support stays `22.19.0` and `24`).
-- Accepted public feature requests without guaranteeing evaluation or implementation, and added a dedicated issue form.
+- Extended the grouped Dependabot Pi proposals to security updates, so an
+  advisory fix for only one of the two Pi packages cannot split them and break
+  typecheck.
+- Extended the maintainer Herdr smoke to drive reverse search, ghost completion,
+  and ghost absence after a confirmed clear, so those shipped features get
+  runtime evidence from the script instead of manual keypresses.
+- Grouped Dependabot's Pi dependency proposals so `pi-coding-agent` and `pi-tui`
+  are always raised together, keeping one resolved `pi-tui` copy and therefore
+  one TUI type identity for typecheck.
+- Raised Pi development dependencies to 0.85.1, Biome to 2.5.12, and the
+  dev-only `@types/node` typings to 26.5.0, keeping the direct and Pi-owned
+  `pi-tui` pins on one version so typecheck resolves a single TUI type identity
+  (typecheck-only; Node runtime support stays `22.19.0` and `24`).
+- Accepted public feature requests without guaranteeing evaluation or
+  implementation, and added a dedicated issue form.
 
 ### Fixed
 
-- Stopped two migration-lock tests from failing a healthy reclaim on a loaded runner: the bounds that prove a reclaim finished without test intervention were tight enough to lose that race against parallel test files, so they now separate a completed reclaim from a hang.
-- Stopped the migration-lock heartbeat test from failing a healthy lock implementation on a slow runner: it now waits for the heartbeat refresh it asserts instead of reading the owner file once after a fixed delay.
+- Stopped two migration-lock tests from failing a healthy reclaim on a loaded
+  runner: the bounds that prove a reclaim finished without test intervention
+  were tight enough to lose that race against parallel test files, so they now
+  separate a completed reclaim from a hang.
+- Stopped the migration-lock heartbeat test from failing a healthy lock
+  implementation on a slow runner: it now waits for the heartbeat refresh it
+  asserts instead of reading the owner file once after a fixed delay.
 
 ## [0.1.7] - 2026-08-24
 
 ### Changed
 
-- Raised Pi development dependencies to 0.84.3 and Biome to 2.5.8 so maintainer pins match the operator runtime, with direct and Pi-owned `pi-tui` dependencies on the same version.
+- Raised Pi development dependencies to 0.84.3 and Biome to 2.5.8 so maintainer
+  pins match the operator runtime, with direct and Pi-owned `pi-tui`
+  dependencies on the same version.
 
 ### Fixed
 
-- Made the Herdr maintainer smoke launch the same detected Pi binary whose version it asserts, so an older parent Herdr `PATH` cannot invalidate dependency dogfood.
-- Made lock-directory removal atomically detach the validated lock before cleanup, preventing a waiting writer from recreating the claim path during recursive removal.
-- Corrected disposable release-smoke guidance to use Pi's supported `/quit` command.
+- Made the Herdr maintainer smoke launch the same detected Pi binary whose
+  version it asserts, so an older parent Herdr `PATH` cannot invalidate
+  dependency dogfood.
+- Made lock-directory removal atomically detach the validated lock before
+  cleanup, preventing a waiting writer from recreating the claim path during
+  recursive removal.
+- Corrected disposable release-smoke guidance to use Pi's supported `/quit`
+  command.
 
 ## [0.1.6] - 2026-08-13
 
 ### Changed
 
-- Raised Pi development dependencies to 0.84.1, Biome to 2.5.7, and the dev-only `@types/node` typings to 26.2.0 (typecheck-only; Node runtime support stays `22.19.0` and `24`); upstream 0.84.1 resolves every shrinkwrap-pinned advisory, so the release audit gate now fails on any high or critical advisory with no waivers.
-- Ported the maintainer Herdr smoke to the Herdr 0.8.0 command surface: Pi now launches through `agent start`, prompts and slash commands go through `agent prompt`, output assertions poll `pane read` after `wait output` was removed, and teardown closes the created pane by terminating its disposable shell.
+- Raised Pi development dependencies to 0.84.1, Biome to 2.5.7, and the dev-only
+  `@types/node` typings to 26.2.0 (typecheck-only; Node runtime support stays
+  `22.19.0` and `24`); upstream 0.84.1 resolves every shrinkwrap-pinned
+  advisory, so the release audit gate now fails on any high or critical advisory
+  with no waivers.
+- Ported the maintainer Herdr smoke to the Herdr 0.8.0 command surface: Pi now
+  launches through `agent start`, prompts and slash commands go through
+  `agent prompt`, output assertions poll `pane read` after `wait output` was
+  removed, and teardown closes the created pane by terminating its disposable
+  shell.
 
 ### Fixed
 
-- Prevented one wrapped-editor redraw without Pi's private cursor marker from permanently disabling ghost completion; pi-history now leaves that redraw unchanged and retries on the next render, while structural editor safeguards and `Ctrl+R` remain unchanged. (#52)
+- Prevented one wrapped-editor redraw without Pi's private cursor marker from
+  permanently disabling ghost completion; pi-history now leaves that redraw
+  unchanged and retries on the next render, while structural editor safeguards
+  and `Ctrl+R` remain unchanged. (#52)
 
 ## [0.1.5] - 2026-07-30
 
 ### Changed
 
-- Raised Pi development dependencies to 0.82.1, clearing the nested protobufjs advisory; the release audit gate now waives only the remaining dev-only brace-expansion advisory, which is pinned inside Pi's own published shrinkwrap and scoped to its exact install path until an upstream release resolves it.
+- Raised Pi development dependencies to 0.82.1, clearing the nested protobufjs
+  advisory; the release audit gate now waives only the remaining dev-only
+  brace-expansion advisory, which is pinned inside Pi's own published shrinkwrap
+  and scoped to its exact install path until an upstream release resolves it.
 
 ### Fixed
 
-- Made confirmed prompt-history clears monotonic across clock changes and corruption recovery so stale open sessions cannot restore cleared prompts; existing history migrates without eager rewrites.
-- Replaced reusable clear counters with opaque per-clear epochs (schema 3) so distinct clears can never collapse into one lineage, including schema-1 old-writer clears on equal clocks; the terminal generation-exhaustion state no longer exists.
-- Fenced history-lock ownership with unguessable tokens: release and publication only apply to the matching lock instance, a live same-host owner is never evicted by lock age alone, and a resumed displaced writer cannot rename stale history over newer state.
-- Confirmed clears now remove crash-orphaned temporary prompt copies for the active history while holding mutation authority; symlinks, directories, malformed names, and unrelated files are left untouched, and cleanup failure blocks the clear with a path-free error.
-- Migration-lock ownership now heartbeats while held, so an abandoned lock whose PID was reused by an unrelated process is reclaimed in bounded time instead of hanging session initialization, while a genuine live owner remains protected for the full migration.
-- Release-workflow validation now parses the workflow structurally and verifies the tag trigger, approval-gated environment, effective `id-token: write` permission, and hardened publish command on the single intended publish job; duplicate keys, split controls, misleading text, anchors, and aliases fail closed.
-- The Herdr maintainer smoke now seeds the final native history schema with clear-lineage metadata, keeps the legacy fixture pinned to schema 1, and exercises one synthetic capture, a confirmed clear, and a restart, with on-disk contract checks that fail on any schema or lineage drift.
-- Isolated release smoke installs and runtime checks under one disposable Pi storage root with cleanup on success, failure, and interruption.
+- Made confirmed prompt-history clears monotonic across clock changes and
+  corruption recovery so stale open sessions cannot restore cleared prompts;
+  existing history migrates without eager rewrites.
+- Replaced reusable clear counters with opaque per-clear epochs (schema 3) so
+  distinct clears can never collapse into one lineage, including schema-1
+  old-writer clears on equal clocks; the terminal generation-exhaustion state no
+  longer exists.
+- Fenced history-lock ownership with unguessable tokens: release and publication
+  only apply to the matching lock instance, a live same-host owner is never
+  evicted by lock age alone, and a resumed displaced writer cannot rename stale
+  history over newer state.
+- Confirmed clears now remove crash-orphaned temporary prompt copies for the
+  active history while holding mutation authority; symlinks, directories,
+  malformed names, and unrelated files are left untouched, and cleanup failure
+  blocks the clear with a path-free error.
+- Migration-lock ownership now heartbeats while held, so an abandoned lock whose
+  PID was reused by an unrelated process is reclaimed in bounded time instead of
+  hanging session initialization, while a genuine live owner remains protected
+  for the full migration.
+- Release-workflow validation now parses the workflow structurally and verifies
+  the tag trigger, approval-gated environment, effective `id-token: write`
+  permission, and hardened publish command on the single intended publish job;
+  duplicate keys, split controls, misleading text, anchors, and aliases fail
+  closed.
+- The Herdr maintainer smoke now seeds the final native history schema with
+  clear-lineage metadata, keeps the legacy fixture pinned to schema 1, and
+  exercises one synthetic capture, a confirmed clear, and a restart, with
+  on-disk contract checks that fail on any schema or lineage drift.
+- Isolated release smoke installs and runtime checks under one disposable Pi
+  storage root with cleanup on success, failure, and interruption.
 
 ## [0.1.4] - 2026-07-23
 
 ### Added
 
-- Reusable, CLI-only npm and GitHub trusted-publishing setup scripts with guarded mutations and fake-CLI tests.
+- Reusable, CLI-only npm and GitHub trusted-publishing setup scripts with
+  guarded mutations and fake-CLI tests.
 
 ### Fixed
 
-- Isolated configuration and prompt history under Pi's active agent directory so profiles sharing one `HOME` no longer read each other's live data.
-- Added a non-destructive frozen legacy snapshot for absent profile targets, with fixed privacy-safe migration notices.
-- Made interrupted migration publication resumable, reclaimed dead migration locks without failing open, and rejected symlink-swapped migration sources.
+- Isolated configuration and prompt history under Pi's active agent directory so
+  profiles sharing one `HOME` no longer read each other's live data.
+- Added a non-destructive frozen legacy snapshot for absent profile targets,
+  with fixed privacy-safe migration notices.
+- Made interrupted migration publication resumable, reclaimed dead migration
+  locks without failing open, and rejected symlink-swapped migration sources.
 - Corrected global history and clear language to the active Pi profile boundary.
 
 ## [0.1.3] - 2026-07-23
 
 ### Changed
 
-- Moved npm distribution from `pi-history` to public package `@sagmans/pi-history`.
-- Preserved existing configuration and prompt-history paths during package migration.
+- Moved npm distribution from `pi-history` to public package
+  `@sagmans/pi-history`.
+- Preserved existing configuration and prompt-history paths during package
+  migration.
 
 ## [0.1.2] - 2026-07-23
 
@@ -137,32 +230,44 @@ All notable changes to this project are documented here. This format follows
 
 ### Changed
 
-- Limited prompt capture, history I/O, commands, and editor integration to TUI sessions; RPC, JSON, and print modes are inert.
-- Added bounded initialization, storage, write-blocking, and editor health states with safe recovery behavior.
-- Bumped the diagnostic contract to version 2 with an `unsupported_schema` write-block reason.
-- Unified history block reasons on a single shared type so storage and diagnostic contracts cannot drift.
+- Limited prompt capture, history I/O, commands, and editor integration to TUI
+  sessions; RPC, JSON, and print modes are inert.
+- Added bounded initialization, storage, write-blocking, and editor health
+  states with safe recovery behavior.
+- Bumped the diagnostic contract to version 2 with an `unsupported_schema`
+  write-block reason.
+- Unified history block reasons on a single shared type so storage and
+  diagnostic contracts cannot drift.
 
 ### Fixed
 
-- Preserved unsupported history schemas during record and clear attempts, including schemas written after runtime initialization.
-- Cleared stale storage degradation when a TUI session re-initializes, so a transient prior failure does not persist into a fresh healthy session.
+- Preserved unsupported history schemas during record and clear attempts,
+  including schemas written after runtime initialization.
+- Cleared stale storage degradation when a TUI session re-initializes, so a
+  transient prior failure does not persist into a fresh healthy session.
 
 ## [0.1.1] - 2026-07-22
 
 ### Added
 
-- Tag-triggered npm release via OIDC trusted publishing with provenance attestations (no stored npm token).
-- First npm-published release: manual `npm publish` bootstrap on the tagged SHA during one-time trusted-publisher setup, waived by the release owner.
+- Tag-triggered npm release via OIDC trusted publishing with provenance
+  attestations (no stored npm token).
+- First npm-published release: manual `npm publish` bootstrap on the tagged SHA
+  during one-time trusted-publisher setup, waived by the release owner.
 
 ## [0.1.0] - 2026-07-21
 
 ### Added
 
-- Persistent local prompt history for pi with ghost completion and fuzzy `Ctrl+R` reverse search.
+- Persistent local prompt history for pi with ghost completion and fuzzy
+  `Ctrl+R` reverse search.
 - Project-isolated history by default; opt-in host-wide `global` isolation.
-- Prompt capture with restart persistence; skips extension-injected messages and blank prompts; preserves multiline text.
-- `/pi-history status` (metadata only) and `/pi-history clear` (confirmed wipe with a clear marker so older open sessions cannot restore entries).
-- Graceful fallback when ghost completion editor support is unavailable; `Ctrl+R` remains available.
+- Prompt capture with restart persistence; skips extension-injected messages and
+  blank prompts; preserves multiline text.
+- `/pi-history status` (metadata only) and `/pi-history clear` (confirmed wipe
+  with a clear marker so older open sessions cannot restore entries).
+- Graceful fallback when ghost completion editor support is unavailable;
+  `Ctrl+R` remains available.
 
 [Unreleased]: https://github.com/sagmans/pi-history/compare/v0.1.11...HEAD
 [0.1.11]: https://github.com/sagmans/pi-history/compare/v0.1.10...v0.1.11
