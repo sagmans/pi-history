@@ -34,3 +34,8 @@ cloning. All checks must pass before you push. Never use `--no-verify`.
 0.87.0, 1.1.0 and 1.3.0 compatibility checks, each installed with
 `npm ci --ignore-scripts` from its committed `compat/pi-<version>` lockfile
 (resolved with min-release-age=3).
+
+Commit messages follow `.githooks/GIT_CONVENTION.md`, which `commit-msg` and
+`pre-push` enforce. The generic checks need gitleaks, osv-scanner, semgrep,
+lizard and markdownlint-cli2, plus actionlint and zizmor when a push changes
+workflow files. A missing tool blocks the hook.
