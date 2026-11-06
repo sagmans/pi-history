@@ -24,7 +24,8 @@ jobs:
           # line resolves from the runner toolcache and can lag a security
           # release. Move both pins here with each Node 24 security fix.
           node-version: "24.22.1"
-          cache: npm
+          # Release inputs must not come from a shared dependency cache.
+          package-manager-cache: false
 
       - run: npm ci --ignore-scripts
 
@@ -60,6 +61,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24.22.1"
+          # Publishing must not restore dependency caches implicitly.
+          package-manager-cache: false
           registry-url: "https://registry.npmjs.org"
 
       # Provenance attestation is generated automatically for OIDC publishes
