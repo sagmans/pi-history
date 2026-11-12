@@ -21,6 +21,8 @@ All notable changes to this project are documented here. This format follows
   release approval. The release setup helper no longer configures a required
   reviewer. To restore the manual gate, add a required reviewer to the
   `npm-release` environment.
+- Dependency updates are maintained by hand on `main`; the automated update PR
+  configuration is retired. Security alerts stay enabled for manual triage.
 
 ### Security
 
