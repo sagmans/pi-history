@@ -26,8 +26,8 @@ require_npm_version() {
 
 validate_dry_run() {
 	case "${DRY_RUN:-0}" in
-		0 | 1) ;;
-		*) fail 'DRY_RUN must be 0 or 1' ;;
+	0 | 1) ;;
+	*) fail 'DRY_RUN must be 0 or 1' ;;
 	esac
 }
 

@@ -63,6 +63,7 @@ test_smoke_exercises_capture_clear_and_restart() {
 		printf 'smoke lacks the on-disk native contract check\n' >&2
 		return 1
 	}
+	# shellcheck disable=SC2016 # literal source patterns expected in the smoke script
 	[[ "${restart_section}" == *'herdr agent prompt "$agent" "/quit"'* &&
 		"${restart_section}" == *'wait_for_shell'* &&
 		"${restart_section}" == *'start_agent'* &&
@@ -75,12 +76,14 @@ test_smoke_exercises_capture_clear_and_restart() {
 test_smoke_exercises_search_and_ghost() {
 	local script absence_section
 	script="$(cat "${SMOKE_SCRIPT}")"
+	# shellcheck disable=SC2016 # literal source patterns expected in the smoke script
 	[[ "${script}" == *'"send-text"'* &&
 		"${script}" == *'ctrl+r'* &&
 		"${script}" == *'wait_for_entry_use_count "$CAPTURE_CANARY" "$SMOKE_USE_COUNT_AFTER_SEARCH"'* ]] || {
 		printf 'smoke does not prove a reverse-search selection reached the draft\n' >&2
 		return 1
 	}
+	# shellcheck disable=SC2016 # literal source patterns expected in the smoke script
 	[[ "${script}" == *'ctrl+e'* &&
 		"${script}" == *'wait_for_output "$SMOKE_CANARY"'* &&
 		"${script}" == *'GHOST_PREFIX'* ]] || {
@@ -88,6 +91,7 @@ test_smoke_exercises_search_and_ghost() {
 		return 1
 	}
 	absence_section="$(sed -n '/^# Cleared history must stop offering completions/,/^# Restart persistence:/p' "${SMOKE_SCRIPT}")"
+	# shellcheck disable=SC2016 # literal source patterns expected in the smoke script
 	[[ "${absence_section}" == *'grep -qF "$SMOKE_CANARY"'* &&
 		"${absence_section}" == *'still renders after a confirmed clear'* ]] || {
 		printf 'smoke does not assert ghost absence after a confirmed clear\n' >&2

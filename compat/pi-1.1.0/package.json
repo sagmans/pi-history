@@ -37,7 +37,7 @@
 		"test:unit": "node --test test/*.test.ts",
 		"test:npm": "bash test/npm/run.sh",
 		"typecheck": "tsc --noEmit",
-		"check": "biome check .",
+		"check": "biome check --error-on-warnings .",
 		"check:fix": "biome check --write .",
 		"audit": "node scripts/npm/audit-gate.mjs",
 		"smoke:herdr": "bash scripts/maintainer-smoke-herdr.sh",

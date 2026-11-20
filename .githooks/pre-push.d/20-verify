@@ -1,26 +1,40 @@
-#!/bin/sh
-# Runs `npm run verify:ci` (audit, Biome, typecheck, tests) on each pushed commit.
-set -eu
+#!/usr/bin/env bash
+# Runs `npm run verify:ci` (audit, Biome, typecheck, tests), shell checks, and
+# a pack dry-run on each pushed commit. The Pi host compatibility matrix runs
+# in 30-pi-compat.
+set -euo pipefail
+
+readonly INSTALL_TIMEOUT_SECONDS=300
+readonly SUITE_TIMEOUT_SECONDS=600
+
+for tool in npm shellcheck shfmt; do
+	command -v "$tool" >/dev/null || {
+		echo "pre-push: $tool is missing" >&2
+		exit 1
+	}
+done
 
 checks() {
-	npm run verify:ci || return 1
+	run_step 'npm verify:ci' "$SUITE_TIMEOUT_SECONDS" npm run verify:ci || return 1
+	run_step 'shell lint and format' "$SUITE_TIMEOUT_SECONDS" bash scripts/lint-shell.sh || return 1
+	run_step 'npm pack dry run' "$SUITE_TIMEOUT_SECONDS" npm pack --dry-run --ignore-scripts >/dev/null || return 1
 }
 
-# Helpers (staged_git, pushed_shas, at_sha, darwin_only) from .githooks/lib.
-# shellcheck source=/dev/null
+# Helpers (staged_git, pushed_shas, at_sha, run_step, darwin_only) from .githooks/lib.
+# shellcheck source=.githooks/lib/helpers.sh
 . "${HOOK_HELPERS:?run from .githooks (scripts/setup-hooks)}"
 
 top=$(git rev-parse --show-toplevel)
 # A temporary worktree has no dependencies: install them from that commit's
-# lockfile (never resolved; npm skips lifecycle scripts, pnpm runs only the
-# builds allowed in pnpm-workspace.yaml). In place, the clone's install is used.
+# lockfile (never resolved; lifecycle scripts stay off). In place, the clone's
+# install is used.
 install_deps() {
-	[ "$(pwd -P)" != "$(CDPATH='' cd -- "$top" && pwd -P)" ] || return 0
-	if [ -f pnpm-lock.yaml ]; then
-		pnpm install --frozen-lockfile >/dev/null || return 1
-	elif [ -f package-lock.json ]; then
-		npm ci --ignore-scripts --no-audit --no-fund >/dev/null || return 1
-	fi
+	[[ "$(pwd -P)" != "$(CDPATH='' cd -- "$top" && pwd -P)" ]] || return 0
+	[[ -f package-lock.json ]] || {
+		echo "pre-push: package-lock.json missing" >&2
+		return 1
+	}
+	run_step 'npm ci' "$INSTALL_TIMEOUT_SECONDS" npm ci --ignore-scripts --no-audit --no-fund >/dev/null || return 1
 }
 
 # at_sha runs this with set -e off, so every step returns on failure.

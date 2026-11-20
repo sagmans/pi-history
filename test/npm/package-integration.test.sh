@@ -12,8 +12,8 @@ test_npm_test_runs_shell_suite() {
 	shell_test="$(cd "${REPO_ROOT}" && "${REAL_NODE_BIN}" -p 'require("./package.json").scripts["test:npm"] ?? ""')"
 	[ "${shell_test}" = 'bash test/npm/run.sh' ] || return 1
 	case "${npm_test}" in
-		*'npm run test:npm'*) ;;
-		*) return 1 ;;
+	*'npm run test:npm'*) ;;
+	*) return 1 ;;
 	esac
 }
 

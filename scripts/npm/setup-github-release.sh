@@ -28,7 +28,8 @@ readonly policy_endpoint="${environment_endpoint}/deployment-branch-policies"
 readonly ruleset_endpoint="repos/${REPO}/rulesets"
 # "reviewers" is omitted on purpose: publication must not wait for a human once
 # an admin pushes a signed tag. RELEASE.md documents re-adding one as rollback.
-environment_payload="$(cat <<JSON
+environment_payload="$(
+	cat <<JSON
 {
   "can_admins_bypass": false,
   "deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}
@@ -36,7 +37,8 @@ environment_payload="$(cat <<JSON
 JSON
 )"
 readonly environment_payload
-ruleset_payload="$(cat <<JSON
+ruleset_payload="$(
+	cat <<JSON
 {
   "name": "${RULESET_NAME}",
   "target": "tag",

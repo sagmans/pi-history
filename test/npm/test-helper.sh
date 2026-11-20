@@ -141,11 +141,11 @@ assert_contains() {
 	local haystack="$1"
 	local needle="$2"
 	case "${haystack}" in
-		*"${needle}"*) ;;
-		*)
-			printf 'missing text: %s\n%s\n' "${needle}" "${haystack}" >&2
-			return 1
-			;;
+	*"${needle}"*) ;;
+	*)
+		printf 'missing text: %s\n%s\n' "${needle}" "${haystack}" >&2
+		return 1
+		;;
 	esac
 }
 
@@ -153,11 +153,11 @@ assert_not_contains() {
 	local haystack="$1"
 	local needle="$2"
 	case "${haystack}" in
-		*"${needle}"*)
-			printf 'unexpected text: %s\n%s\n' "${needle}" "${haystack}" >&2
-			return 1
-			;;
-		*) ;;
+	*"${needle}"*)
+		printf 'unexpected text: %s\n%s\n' "${needle}" "${haystack}" >&2
+		return 1
+		;;
+	*) ;;
 	esac
 }
 

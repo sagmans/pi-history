@@ -30,10 +30,11 @@ the maintainer smoke test. Use synthetic, redacted test data only.
 
 Checks run in `.githooks/`, not in push/PR CI. Run `scripts/setup-hooks` after
 cloning. All checks must pass before you push. Never use `--no-verify`.
-`pre-push`: `npm run verify:ci` (audit, Biome, typecheck, tests), then the Pi
-0.87.0, 1.1.0 and 1.3.0 compatibility checks, each installed with
-`npm ci --ignore-scripts` from its committed `compat/pi-<version>` lockfile
-(resolved with min-release-age=3).
+`pre-commit`: Biome on the staged snapshot, and `shellcheck` + `shfmt` when
+shell scripts change. `pre-push`: `npm run verify:ci` (audit, Biome, typecheck,
+tests), `shellcheck` + `shfmt`, pack dry-run, then the Pi 0.87.0, 1.1.0 and
+1.3.0 compatibility checks, each installed with `npm ci --ignore-scripts` from
+its committed `compat/pi-<version>` lockfile (resolved with min-release-age=3).
 
 Commit messages follow `.githooks/GIT_CONVENTION.md`, which `commit-msg` and
 `pre-push` enforce. The generic checks need gitleaks, osv-scanner, semgrep,

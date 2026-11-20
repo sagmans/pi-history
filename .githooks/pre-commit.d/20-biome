@@ -1,12 +1,48 @@
-#!/bin/sh
-# Runs Biome on the staged files (their working-tree copies).
-set -eu
+#!/usr/bin/env bash
+# Runs Biome (format and lint) on the exact staged snapshot so partial staging
+# cannot hide a formatting or lint defect. Uses the pinned local Biome binary
+# and fails closed when it is missing.
+set -euo pipefail
 
-# Helpers (staged_git, pushed_shas, at_sha, darwin_only) from .githooks/lib.
-# shellcheck source=/dev/null
+# shellcheck source=.githooks/lib/helpers.sh
 . "${HOOK_HELPERS:?run from .githooks (scripts/setup-hooks)}"
 
-files=$(staged_git diff --cached --name-only --diff-filter=ACMR -z | tr '\0' '\n') || exit 1
-[ -n "$files" ] || exit 0
-printf '%s\n' "$files" | tr '\n' '\0' |
-	xargs -0 npx --no-install biome check --no-errors-on-unmatched --files-ignore-unknown=true
+readonly CHECK_TIMEOUT_SECONDS=60
+readonly SCRATCH_PREFIX=pi-history-biome
+
+root=$(git rev-parse --show-toplevel)
+biome="$root/node_modules/.bin/biome"
+[[ -x "$biome" ]] || {
+	echo "pre-commit: local Biome is missing; run npm ci --ignore-scripts" >&2
+	exit 1
+}
+
+staged=$(staged_git diff --cached --name-only --diff-filter=ACMR) || exit 1
+[[ -n "$staged" ]] || exit 0
+
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/$SCRATCH_PREFIX.XXXXXX")
+cleanup() {
+	# Only this run's temporary directory is removed.
+	if [[ -d "$scratch" && "${scratch##*/}" == "$SCRATCH_PREFIX".* ]]; then
+		rm -r -- "$scratch"
+	fi
+}
+trap cleanup EXIT
+
+staged_git diff --cached --name-only --diff-filter=ACMR -z >"$scratch/staged"
+
+# Reject staged symlinks so Biome cannot read files outside the staged copy.
+staged_git ls-files --stage >"$scratch/index-modes"
+if grep -q '^120000 ' "$scratch/index-modes"; then
+	echo "pre-commit: staged symlinks are not allowed" >&2
+	exit 1
+fi
+
+staged_git checkout-index --all --prefix="$scratch/tree/"
+cd "$scratch/tree"
+run_biome() {
+	xargs -0 "$biome" check --vcs-enabled=false --error-on-warnings \
+		--no-errors-on-unmatched --files-ignore-unknown=true \
+		--config-path="$scratch/tree/biome.json" -- <"$scratch/staged"
+}
+run_step 'staged Biome check' "$CHECK_TIMEOUT_SECONDS" run_biome

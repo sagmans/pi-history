@@ -38,7 +38,7 @@ validate_tag_pattern() {
 	local value="${1:-}"
 	[[ "${value}" =~ ${TAG_PATTERN_PATTERN} ]] || fail 'TAG_PATTERN contains unsupported characters'
 	case "${value}" in
-		*'..'* | *'//'*) fail 'TAG_PATTERN contains an unsafe ref path' ;;
+	*'..'* | *'//'*) fail 'TAG_PATTERN contains an unsafe ref path' ;;
 	esac
 }
 
@@ -56,7 +56,7 @@ validate_message() {
 	local value="${1:-}"
 	[ -n "${value}" ] || fail 'DEPRECATION_MESSAGE is required'
 	case "${value}" in
-		*$'\n'* | *$'\r'*) fail 'DEPRECATION_MESSAGE must be one line' ;;
+	*$'\n'* | *$'\r'*) fail 'DEPRECATION_MESSAGE must be one line' ;;
 	esac
 }
 

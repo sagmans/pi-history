@@ -145,7 +145,7 @@ process.stdin.on("end", () => {
 
 wait_for_shell() {
 	local deadline=$((SECONDS + READY_TIMEOUT_MS / 1000))
-	for ((;;)); do
+	for (( ; ; )); do
 		shell_is_foreground && return 0
 		((SECONDS < deadline)) || return 1
 		sleep 0.2
@@ -160,7 +160,7 @@ read_pane() {
 # equivalent over the remaining read surface.
 wait_for_output() {
 	local match="$1" deadline=$((SECONDS + READY_TIMEOUT_MS / 1000))
-	for ((;;)); do
+	for (( ; ; )); do
 		read_pane 2>/dev/null | grep -qF "$match" && return 0
 		((SECONDS < deadline)) || return 1
 		sleep 0.2
@@ -171,7 +171,7 @@ wait_for_output() {
 # split itself; retry within the readiness budget instead of racing it.
 start_agent() {
 	local name="$1" deadline=$((SECONDS + READY_TIMEOUT_MS / 1000)) start_json
-	for ((;;)); do
+	for (( ; ; )); do
 		if start_json="$(
 			herdr agent start "$name" --kind pi --pane "$pane_id" \
 				--timeout "$READY_TIMEOUT_MS" -- --approve --no-session -e . 2>/dev/null
@@ -185,6 +185,7 @@ start_agent() {
 }
 
 extract_diagnostic() {
+	# shellcheck disable=SC2016 # JavaScript template literal, not shell expansion
 	node -e '
 let input = "";
 process.stdin.setEncoding("utf8");
@@ -219,7 +220,7 @@ expected_diagnostic() {
 wait_for_diagnostic() {
 	local expected="$1" marker="$2" deadline=$((SECONDS + STATUS_TIMEOUT_MS / 1000))
 	local pane_text diagnostic
-	for ((;;)); do
+	for (( ; ; )); do
 		pane_text="$(read_pane)" || return 1
 		if diagnostic="$(printf '%s' "$pane_text" | extract_diagnostic "$expected" "$marker")"; then
 			printf '%s' "$diagnostic"
@@ -267,7 +268,7 @@ try {
 wait_for_file_entries() {
 	local expected_count="$1"
 	local deadline=$((SECONDS + CAPTURE_POLL_TIMEOUT_S))
-	for ((;;)); do
+	for (( ; ; )); do
 		[[ "$(count_file_entries)" == "$expected_count" ]] && return 0
 		((SECONDS < deadline)) || return 1
 		sleep 0.2
@@ -293,7 +294,7 @@ try {
 wait_for_entry_use_count() {
 	local text="$1" expected_count="$2"
 	local deadline=$((SECONDS + CAPTURE_POLL_TIMEOUT_S))
-	for ((;;)); do
+	for (( ; ; )); do
 		[[ "$(entry_use_count "$text")" == "$expected_count" ]] && return 0
 		((SECONDS < deadline)) || return 1
 		sleep 0.2

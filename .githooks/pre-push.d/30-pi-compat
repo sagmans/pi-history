@@ -20,6 +20,7 @@ compat_checks() {
 		lock="compat/pi-$v"
 		# The compat manifest must match package.json except the Pi pins;
 		# otherwise its lockfile tests a stale dependency set.
+		# shellcheck disable=SC2016 # JavaScript template literal, not shell expansion
 		node -e '
 const fs = require("node:fs");
 const scope = process.argv[2];

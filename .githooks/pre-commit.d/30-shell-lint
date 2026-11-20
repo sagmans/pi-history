@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Runs shellcheck and shfmt on the exact staged snapshot whenever tracked shell
+# scripts change. Delegates to scripts/lint-shell.sh so pre-commit and pre-push
+# share one discovery and flag definition.
+set -euo pipefail
+
+# shellcheck source=.githooks/lib/helpers.sh
+. "${HOOK_HELPERS:?run from .githooks (scripts/setup-hooks)}"
+
+readonly CHECK_TIMEOUT_SECONDS=60
+readonly SCRATCH_PREFIX=pi-history-shell
+readonly SHELL_PATHSPECS=('*.sh' '.githooks/*.d/*' 'scripts/setup-hooks' ':!.githooks/lib')
+
+staged=$(staged_git diff --cached --name-only --diff-filter=ACMR -- "${SHELL_PATHSPECS[@]}") || exit 1
+[[ -n "$staged" ]] || exit 0
+
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/$SCRATCH_PREFIX.XXXXXX")
+cleanup() {
+	# Only this run's temporary directory is removed.
+	if [[ -d "$scratch" && "${scratch##*/}" == "$SCRATCH_PREFIX".* ]]; then
+		rm -r -- "$scratch"
+	fi
+}
+trap cleanup EXIT
+
+# Reject staged symlinks so linters cannot follow links outside the snapshot.
+staged_git ls-files --stage >"$scratch/index-modes"
+if grep -q '^120000 ' "$scratch/index-modes"; then
+	echo "pre-commit: staged symlinks are not allowed" >&2
+	exit 1
+fi
+
+staged_git checkout-index --all --prefix="$scratch/tree/"
+cd "$scratch/tree"
+run_step 'staged shell lint and format' "$CHECK_TIMEOUT_SECONDS" bash scripts/lint-shell.sh
